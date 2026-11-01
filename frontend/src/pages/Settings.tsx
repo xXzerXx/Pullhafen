@@ -13,6 +13,7 @@ export function Settings() {
   const [justCreatedToken, setJustCreatedToken] = useState<string | null>(null)
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
+  const [newPasswordRepeat, setNewPasswordRepeat] = useState('')
   const [passwordStatus, setPasswordStatus] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -93,11 +94,16 @@ export function Settings() {
 
   async function handleChangePassword() {
     setPasswordStatus(null)
+    if (newPassword !== newPasswordRepeat) {
+      setPasswordStatus('Die beiden neuen Passwörter stimmen nicht überein.')
+      return
+    }
     try {
       await auth.changePassword(currentPassword, newPassword)
       setPasswordStatus('Passwort geändert.')
       setCurrentPassword('')
       setNewPassword('')
+      setNewPasswordRepeat('')
     } catch (err) {
       setPasswordStatus(err instanceof ApiError ? err.message : 'Ändern fehlgeschlagen.')
     }
@@ -245,8 +251,20 @@ export function Settings() {
             autoComplete="new-password"
           />
         </label>
+        <label>
+          Neues Passwort wiederholen
+          <input
+            type="password"
+            value={newPasswordRepeat}
+            onChange={(e) => setNewPasswordRepeat(e.target.value)}
+            autoComplete="new-password"
+          />
+        </label>
         {passwordStatus && <p className="hint">{passwordStatus}</p>}
-        <button onClick={handleChangePassword} disabled={!currentPassword || !newPassword}>
+        <button
+          onClick={handleChangePassword}
+          disabled={!currentPassword || !newPassword || !newPasswordRepeat}
+        >
           Passwort ändern
         </button>
       </section>
