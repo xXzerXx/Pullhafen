@@ -31,8 +31,8 @@ class AdminUser(Base):
 
 class Item(Base):
     """Ein Download, über seinen ganzen Lebenszyklus hinweg (Warteschlange
-    -> Download -> Bibliothek), siehe die Architektur-Notiz im Plan. Engine
-    ist vorerst immer 'http'; 'ytdlp' kommt in Stufe 4 dazu."""
+    -> Download -> Bibliothek), siehe die Architektur-Notiz im Plan.
+    Engine ist 'http' (generische Datei) oder 'ytdlp' (erkanntes Video)."""
 
     __tablename__ = "items"
 
@@ -45,6 +45,11 @@ class Item(Base):
     bytes_downloaded: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     total_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error_message: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Nur bei engine='ytdlp' gesetzt: source = extractor_key (z.B. "Youtube"),
+    # age_limit = yt-dlp's eigenes Feld (0, wenn die Seite keins liefert),
+    # dient Stufe 9 (Einschränkungs-Logik) als erste der drei Regel-Ebenen.
+    source: Mapped[str | None] = mapped_column(String, nullable=True)
+    age_limit: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, nullable=False, default=datetime.datetime.utcnow
     )

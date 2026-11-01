@@ -12,7 +12,8 @@ from app.services.auth import (
     get_or_create_session_secret,
     verify_login,
 )
-from app.services.download_manager import run_generic_download
+from app.services.download_manager import run_generic_download, run_ytdlp_download
+from app.services.engines import ytdlp_engine
 from app.services.settings import (
     DOWNLOADS_SUBPATH_KEY,
     InvalidSubpathError,
@@ -112,6 +113,8 @@ class ItemOut(BaseModel):
     bytes_downloaded: int
     total_bytes: int | None
     error_message: str | None
+    source: str | None
+    age_limit: int
 
     @classmethod
     def from_item(cls, item: Item) -> "ItemOut":
@@ -125,6 +128,8 @@ class ItemOut(BaseModel):
             bytes_downloaded=item.bytes_downloaded,
             total_bytes=item.total_bytes,
             error_message=item.error_message,
+            source=item.source,
+            age_limit=item.age_limit,
         )
 
 
@@ -132,13 +137,37 @@ class ItemOut(BaseModel):
 async def add_link(
     body: LinkIn, db: Session = Depends(get_db), _: str = Depends(require_login)
 ) -> ItemOut:
-    # Die yt-dlp-Erkennung (Stufe 4) entscheidet hier künftig zwischen
-    # Video-Engine und generischem Download. Bis dahin: alles ist 'http'.
-    item = Item(url=body.url, engine="http", status="queued")
-    db.add(item)
-    db.commit()
-    db.refresh(item)
-    asyncio.create_task(run_generic_download(item.id))
+    # Echter yt-dlp-Trockenlauf entscheidet: erkanntes Video -> ytdlp-Engine,
+    # keine Seite zuständig -> generischer httpx-Download, bekannte Seite
+    # aber Video kaputt -> klar als gescheiterter Video-Download melden
+    # (nicht als generischer Download der Fehlerseite durchrutschen lassen).
+    try:
+        info = await asyncio.to_thread(ytdlp_engine.classify, body.url)
+    except ytdlp_engine.VideoUnavailableError as exc:
+        item = Item(url=body.url, engine="ytdlp", status="failed", error_message=str(exc))
+        db.add(item)
+        db.commit()
+        db.refresh(item)
+        return ItemOut.from_item(item)
+
+    if info is not None:
+        item = Item(
+            url=body.url,
+            engine="ytdlp",
+            status="queued",
+            source=info.get("extractor_key"),
+            age_limit=info.get("age_limit") or 0,
+        )
+        db.add(item)
+        db.commit()
+        db.refresh(item)
+        asyncio.create_task(run_ytdlp_download(item.id))
+    else:
+        item = Item(url=body.url, engine="http", status="queued")
+        db.add(item)
+        db.commit()
+        db.refresh(item)
+        asyncio.create_task(run_generic_download(item.id))
     return ItemOut.from_item(item)
 
 

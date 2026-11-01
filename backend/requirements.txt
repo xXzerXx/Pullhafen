@@ -3,7 +3,7 @@ uvicorn[standard]==0.32.1
 sqlalchemy==2.0.55
 alembic==1.14.0
 httpx==0.28.1
-yt-dlp==2024.11.18
+yt-dlp==2026.10.26
 bcrypt==5.0.0
 itsdangerous==2.2.0
 python-multipart==0.0.17
