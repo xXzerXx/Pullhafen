@@ -168,3 +168,28 @@ export function FilmIcon({ size = 18, className }: IconProps) {
     </svg>
   )
 }
+
+export function GinkgoLeafIcon({ size = 18, className }: IconProps) {
+  return (
+    <svg
+      aria-hidden="true"
+      width={size}
+      height={size}
+      viewBox="0 0 32 32"
+      className={className}
+    >
+      <path
+        d="M16 25 C 9 23, 4 16, 6 9 Q 16 15, 26 9 C 28 16, 23 23, 16 25 Z"
+        fill="currentColor"
+      />
+      <path
+        d="M16 25 L 16 15 M16 21 L 9 12 M16 21 L 23 12"
+        fill="none"
+        stroke="var(--bg, #0d1321)"
+        strokeWidth="0.8"
+        strokeLinecap="round"
+        opacity="0.45"
+      />
+    </svg>
+  )
+}

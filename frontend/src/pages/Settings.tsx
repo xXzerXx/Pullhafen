@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { ApiError, apiTokens, auth, type ApiTokenInfo, settings as settingsApi } from '../api'
 import type { AppSettings } from '../types'
 import { ToggleSwitch } from '../components/ToggleSwitch'
+import { GinkgoLeafIcon } from '../components/icons'
 import { useItems } from '../ItemsContext'
 
 // Werte sind Preset-Schlüssel, die der Server auflöst (siehe
@@ -422,6 +423,11 @@ export function Settings() {
           Passwort ändern
         </button>
       </section>
+
+      <footer className="app-footer" title="Für Kyo">
+        <GinkgoLeafIcon size={20} className="app-footer__leaf" />
+        <span>Pullhafen v{settings.version}</span>
+      </footer>
     </div>
   )
 }

@@ -43,7 +43,9 @@ async function handleAddLink(url) {
       },
       body: JSON.stringify({ url }),
     });
-    return { ok: res.ok, reason: res.ok ? undefined : "server" };
+    if (!res.ok) return { ok: false, reason: "server" };
+    const item = await res.json().catch(() => null);
+    return { ok: true, alreadyExisted: item?.already_existed === true };
   } catch {
     return { ok: false, reason: "network" };
   }
@@ -52,7 +54,7 @@ async function handleAddLink(url) {
 async function handleLinkClicked(url) {
   const result = await handleAddLink(url);
   if (result.ok) {
-    await setBadge("✓", "#3fb97f");
+    await setBadge(result.alreadyExisted ? "=" : "✓", result.alreadyExisted ? "#8c98a8" : "#3fb97f");
   } else if (result.reason === "no-config") {
     await setBadge("!", "#e0a940");
   } else {

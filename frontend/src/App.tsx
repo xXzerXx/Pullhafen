@@ -29,15 +29,17 @@ function AppShell({ username, onLoggedOut }: { username: string; onLoggedOut: ()
 
   function handleAddDone(result: AddLinkResult) {
     setAddOpen(false)
-    if (result.failures.length === 0) {
-      setToast(
-        `${result.succeeded} Link${result.succeeded === 1 ? '' : 's'} zur Warteschlange hinzugefügt.`,
-      )
-    } else {
-      setToast(
-        `${result.succeeded} hinzugefügt, ${result.failures.length} fehlgeschlagen: ${result.failures[0]}`,
-      )
+    const parts: string[] = []
+    if (result.succeeded > 0) {
+      parts.push(`${result.succeeded} Link${result.succeeded === 1 ? '' : 's'} hinzugefügt`)
     }
+    if (result.duplicates > 0) {
+      parts.push(`${result.duplicates} schon vorhanden`)
+    }
+    if (result.failures.length > 0) {
+      parts.push(`${result.failures.length} fehlgeschlagen: ${result.failures[0]}`)
+    }
+    setToast(parts.length > 0 ? parts.join(', ') + '.' : 'Nichts hinzugefügt.')
     window.setTimeout(() => setToast(null), 7000)
   }
 

@@ -48,8 +48,8 @@ async function sendLink(url, button) {
   statusEl.textContent = 'Wird gesendet…'
   const res = await chrome.runtime.sendMessage({ type: 'pullhafen-add-link', url })
   if (res?.ok) {
-    statusEl.textContent = 'Hinzugefügt ✓'
-    setTimeout(() => window.close(), 700)
+    statusEl.textContent = res.alreadyExisted ? 'War schon vorhanden.' : 'Hinzugefügt ✓'
+    setTimeout(() => window.close(), 900)
   } else {
     statusEl.textContent =
       res?.reason === 'no-config'

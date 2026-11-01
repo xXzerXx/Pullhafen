@@ -4,6 +4,7 @@ import { FileTextIcon } from './icons'
 
 export interface AddLinkResult {
   succeeded: number
+  duplicates: number
   failures: string[]
 }
 
@@ -28,18 +29,20 @@ export function AddLinkPanel({ onDone }: { onDone: (result: AddLinkResult) => vo
     if (urls.length === 0) return
     setBusy(true)
     let succeeded = 0
+    let duplicates = 0
     const failures: string[] = []
     for (const url of urls) {
       try {
         const item = await addLink(url)
-        if (item.status === 'failed') failures.push(item.error_message ?? `${url}: fehlgeschlagen`)
+        if (item.already_existed) duplicates += 1
+        else if (item.status === 'failed') failures.push(item.error_message ?? `${url}: fehlgeschlagen`)
         else succeeded += 1
       } catch (err) {
         failures.push(err instanceof Error ? err.message : `${url}: fehlgeschlagen`)
       }
     }
     setBusy(false)
-    onDone({ succeeded, failures })
+    onDone({ succeeded, duplicates, failures })
   }
 
   return (

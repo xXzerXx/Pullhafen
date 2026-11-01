@@ -22,6 +22,8 @@ export interface Item {
   restricted: boolean
   hidden_from_downloads: boolean
   created_at: string
+  /** Nur in der Antwort von addLink() relevant - siehe AddLinkPanel. */
+  already_existed?: boolean
 }
 
 export interface AppSettings {
@@ -31,6 +33,7 @@ export interface AppSettings {
   auto_remove_completed: boolean
   downloads_subpath: string
   resolved_downloads_path: string
+  version: string
 }
 
 export interface ItemUpdateMessage {

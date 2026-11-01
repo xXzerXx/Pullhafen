@@ -327,6 +327,19 @@ main {
   display: flex;
   gap: 10px;
 }
+.app-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 20px 0 8px;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+.app-footer__leaf {
+  color: var(--accent);
+  flex-shrink: 0;
+}
 
 /* --- Toggle switch --- */
 

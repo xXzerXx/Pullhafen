@@ -10,6 +10,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from sqlalchemy.orm import Session
 
 from app.config import STATIC_DIR
+from app.version import PULLHAFEN_VERSION
 from app.database import SessionLocal, get_db
 from app.models import ApiToken, Item, Performer, RestrictedDomain, Tag
 from app.services import api_tokens as api_tokens_service
@@ -226,10 +227,18 @@ class ItemOut(BaseModel):
     restricted: bool
     hidden_from_downloads: bool
     created_at: str
+    # Nur beim Hinzufügen eines Links relevant (siehe _create_link_item) -
+    # True heißt: dieser Link existierte schon, es wurde NICHTS neu angelegt,
+    # das zurückgegebene Item ist der bereits vorhandene Eintrag.
+    already_existed: bool = False
 
     @classmethod
     def from_item(
-        cls, item: Item, restricted_domains: set[str], age_limit_threshold: int
+        cls,
+        item: Item,
+        restricted_domains: set[str],
+        age_limit_threshold: int,
+        already_existed: bool = False,
     ) -> "ItemOut":
         return cls(
             id=item.id,
@@ -254,6 +263,7 @@ class ItemOut(BaseModel):
                 item, restricted_domains, age_limit_threshold
             ),
             hidden_from_downloads=item.hidden_from_downloads,
+            already_existed=already_existed,
         )
 
 
@@ -269,6 +279,15 @@ async def _create_link_item(url: str, db: Session) -> ItemOut:
     /api/extension/links (Bearer-Token) - derselbe Trockenlauf, dieselbe
     Engine-Entscheidung, derselbe WS-Broadcast, nur der Auth-Pfad
     unterscheidet sich zwischen den beiden Endpunkten."""
+    # Exakt dieselbe URL schon vorhanden (egal welcher Status) - nicht
+    # nochmal klassifizieren/anlegen, sondern den bestehenden Eintrag mit
+    # already_existed=True zurückgeben, damit das Frontend "schon vorhanden"
+    # statt eines stillen Duplikats anzeigen kann.
+    existing = db.query(Item).filter(Item.url == url).first()
+    if existing is not None:
+        domains, threshold = _restricted_context(db)
+        return ItemOut.from_item(existing, domains, threshold, already_existed=True)
+
     # Echter yt-dlp-Trockenlauf entscheidet: erkanntes Video -> ytdlp-Engine,
     # keine Seite zuständig -> generischer httpx-Download, bekannte Seite
     # aber Video kaputt -> klar als gescheiterter Video-Download melden
@@ -703,6 +722,7 @@ class AppSettingsOut(BaseModel):
     auto_remove_completed: bool
     downloads_subpath: str
     resolved_downloads_path: str
+    version: str
 
 
 class AppSettingsIn(BaseModel):
@@ -720,6 +740,7 @@ def _app_settings_out(db: Session) -> AppSettingsOut:
         auto_remove_completed=get_auto_remove_completed(db),
         downloads_subpath=get_setting(db, DOWNLOADS_SUBPATH_KEY, ""),
         resolved_downloads_path=str(resolve_downloads_root(db)),
+        version=PULLHAFEN_VERSION,
     )
 
 
