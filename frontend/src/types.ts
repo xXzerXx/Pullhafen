@@ -13,11 +13,13 @@ export interface Item {
   error_message: string | null
   source: string | null
   age_limit: number
+  duration_seconds: number | null
   tags: string[]
   performers: string[]
   restricted_override: boolean | null
   restricted: boolean
   hidden_from_downloads: boolean
+  created_at: string
 }
 
 export interface AppSettings {
@@ -33,3 +35,10 @@ export interface ItemUpdateMessage {
   type: 'item_update'
   item: Partial<Item> & { id: number }
 }
+
+export interface ItemRemovedMessage {
+  type: 'item_removed'
+  id: number
+}
+
+export type WsMessage = ItemUpdateMessage | ItemRemovedMessage

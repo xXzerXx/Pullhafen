@@ -6,52 +6,146 @@ import { Queue } from './pages/Queue'
 import { Downloads } from './pages/Downloads'
 import { Library } from './pages/Library'
 import { Settings } from './pages/Settings'
+import { SearchIcon, PlusIcon } from './components/icons'
+import { AddLinkPanel, type AddLinkResult } from './components/AddLinkPanel'
 
 type Tab = 'queue' | 'downloads' | 'library' | 'settings'
 
-const TABS: { key: Tab; label: string }[] = [
-  { key: 'queue', label: 'Warteschlange' },
-  { key: 'downloads', label: 'Downloads' },
-  { key: 'library', label: 'Bibliothek' },
-  { key: 'settings', label: 'Einstellungen' },
-]
-
 function AppShell({ username, onLoggedOut }: { username: string; onLoggedOut: () => void }) {
   const [tab, setTab] = useState<Tab>('queue')
+  const [librarySearch, setLibrarySearch] = useState('')
+  const [addOpen, setAddOpen] = useState(false)
+  const [toast, setToast] = useState<string | null>(null)
 
   async function handleLogout() {
     await auth.logout()
     onLoggedOut()
   }
 
+  function handleHeaderSearch(value: string) {
+    setLibrarySearch(value)
+    if (value.trim()) setTab('library')
+  }
+
+  function handleAddDone(result: AddLinkResult) {
+    setAddOpen(false)
+    if (result.failures.length === 0) {
+      setToast(
+        `${result.succeeded} Link${result.succeeded === 1 ? '' : 's'} zur Warteschlange hinzugefügt.`,
+      )
+    } else {
+      setToast(
+        `${result.succeeded} hinzugefügt, ${result.failures.length} fehlgeschlagen: ${result.failures[0]}`,
+      )
+    }
+    window.setTimeout(() => setToast(null), 7000)
+  }
+
   return (
     <ItemsProvider>
-      <div className="app-shell">
-        <header className="app-header">
-          <h1>Pullhafen</h1>
-          <nav className="tabs">
-            {TABS.map((t) => (
-              <button
-                key={t.key}
-                className={tab === t.key ? 'tab tab--active' : 'tab'}
-                onClick={() => setTab(t.key)}
-              >
-                {t.label}
-              </button>
-            ))}
+      {(counts) => (
+        <div className="app-shell">
+          <header className="app-header">
+            <div className="app-header__brand">
+              <div className="app-header__brand-icon" aria-hidden="true">
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="#E8A33D"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M12 3v12" />
+                  <path d="M7 10l5 5 5-5" />
+                  <path d="M4 19h16" />
+                </svg>
+              </div>
+              <div className="app-header__brand-name">Pullhafen</div>
+            </div>
+
+            <div className="app-header__search">
+              <SearchIcon />
+              <label htmlFor="pf-search" className="sr-only">
+                Bibliothek durchsuchen
+              </label>
+              <input
+                id="pf-search"
+                type="search"
+                placeholder="Titel, Tag oder Website suchen …"
+                value={librarySearch}
+                onChange={(e) => handleHeaderSearch(e.target.value)}
+              />
+            </div>
+
+            <div className="app-header__spacer" />
+
+            <button className="btn-accent" aria-expanded={addOpen} onClick={() => setAddOpen((o) => !o)}>
+              <PlusIcon />
+              Links hinzufügen
+            </button>
+
+            <div className="app-header__user">
+              <span>{username}</span>
+              <button onClick={handleLogout}>Abmelden</button>
+            </div>
+          </header>
+
+          {addOpen && <AddLinkPanel onDone={handleAddDone} />}
+          {toast && (
+            <div className="add-panel" role="status" style={{ padding: '12px 32px' }}>
+              {toast}
+            </div>
+          )}
+
+          <nav className="tabs" role="tablist" aria-label="Hauptbereiche">
+            <button
+              role="tab"
+              aria-selected={tab === 'queue'}
+              className={tab === 'queue' ? 'tab tab--active' : 'tab'}
+              onClick={() => setTab('queue')}
+            >
+              Warteschlange
+              <span className="tab__count">{counts.queue}</span>
+            </button>
+            <button
+              role="tab"
+              aria-selected={tab === 'downloads'}
+              className={tab === 'downloads' ? 'tab tab--active' : 'tab'}
+              onClick={() => setTab('downloads')}
+            >
+              Downloads
+              <span className="tab__count">{counts.downloads}</span>
+            </button>
+            <button
+              role="tab"
+              aria-selected={tab === 'library'}
+              className={tab === 'library' ? 'tab tab--active' : 'tab'}
+              onClick={() => setTab('library')}
+            >
+              Bibliothek
+              <span className="tab__count">{counts.library}</span>
+            </button>
+            <button
+              role="tab"
+              aria-selected={tab === 'settings'}
+              className={tab === 'settings' ? 'tab tab--active' : 'tab'}
+              onClick={() => setTab('settings')}
+            >
+              Einstellungen
+            </button>
           </nav>
-          <div className="app-header__user">
-            <span>{username}</span>
-            <button onClick={handleLogout}>Abmelden</button>
-          </div>
-        </header>
-        <main>
-          {tab === 'queue' && <Queue />}
-          {tab === 'downloads' && <Downloads />}
-          {tab === 'library' && <Library />}
-          {tab === 'settings' && <Settings />}
-        </main>
-      </div>
+
+          <main>
+            {tab === 'queue' && <Queue />}
+            {tab === 'downloads' && <Downloads />}
+            {tab === 'library' && <Library search={librarySearch} onSearchChange={setLibrarySearch} />}
+            {tab === 'settings' && <Settings />}
+          </main>
+        </div>
+      )}
     </ItemsProvider>
   )
 }

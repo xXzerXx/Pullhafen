@@ -1,16 +1,18 @@
-import { useState, type FormEvent } from 'react'
+import { useState } from 'react'
 import { items as itemsApi } from '../api'
 import { useItems } from '../ItemsContext'
-import { ItemRow } from '../components/ItemRow'
+import { Thumbnail } from '../components/Thumbnail'
+import { CloseIcon } from '../components/icons'
+import { formatDuration } from '../format'
 
 export function Queue() {
-  const { items, addLink } = useItems()
-  const [url, setUrl] = useState('')
+  const { items, removeItem } = useItems()
   const [busyIds, setBusyIds] = useState<Set<number>>(new Set())
-  const [error, setError] = useState<string | null>(null)
-  const [adding, setAdding] = useState(false)
 
-  const active = items.filter((i) => i.status === 'queued' || i.status === 'downloading' || i.status === 'paused')
+  // Warteschlange = wirklich wartend, noch nicht gestartet (siehe Vorschau) -
+  // sobald ein Download läuft oder pausiert ist, gehört er in den
+  // Downloads-Reiter.
+  const queued = items.filter((i) => i.status === 'queued')
 
   function setBusy(id: number, busy: boolean) {
     setBusyIds((prev) => {
@@ -21,35 +23,19 @@ export function Queue() {
     })
   }
 
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault()
-    if (!url.trim()) return
-    setAdding(true)
-    setError(null)
+  async function handleStart(id: number) {
+    setBusy(id, true)
     try {
-      const item = await addLink(url.trim())
-      // Ein erkanntes, aber gescheitertes Video (z.B. "Please sign in" bei
-      // bestimmten YouTube-Mix/Radio-Links) kommt als normale 200-Antwort
-      // mit status='failed' zurück, keine Exception - und 'failed'-Items
-      // tauchen bewusst nicht in der Warteschlange auf (nur Downloads/
-      // Bibliothek). Ohne diesen Hinweis hier sieht es aus wie "nichts
-      // passiert", obwohl der Server den Fehler korrekt gemeldet hat.
-      if (item.status === 'failed') {
-        setError(item.error_message ?? 'Link konnte nicht geladen werden.')
-      } else {
-        setUrl('')
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Link konnte nicht hinzugefügt werden.')
+      await itemsApi.start(id)
     } finally {
-      setAdding(false)
+      setBusy(id, false)
     }
   }
 
-  async function run(id: number, action: (id: number) => Promise<unknown>) {
+  async function handleRemove(id: number) {
     setBusy(id, true)
     try {
-      await action(id)
+      await removeItem(id)
     } finally {
       setBusy(id, false)
     }
@@ -57,30 +43,41 @@ export function Queue() {
 
   return (
     <div className="page">
-      <form className="add-link-form" onSubmit={handleSubmit}>
-        <input
-          placeholder="Link einfügen (Video oder Datei)…"
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-        />
-        <button type="submit" disabled={adding || !url.trim()}>
-          {adding ? 'Wird geprüft…' : 'Hinzufügen'}
-        </button>
-      </form>
-      {error && <p className="error-text">{error}</p>}
-      {active.length === 0 ? (
+      <div className="section-head">
+        <div>
+          <div className="section-head__title">Warteschlange</div>
+          <div className="section-head__subtitle">Wartet auf den Start - in den Einstellungen lässt sich festlegen, ob neue Links sofort loslegen.</div>
+        </div>
+      </div>
+
+      {queued.length === 0 ? (
         <p className="empty-hint">Nichts in der Warteschlange.</p>
       ) : (
-        <ul className="item-list">
-          {active.map((item) => (
-            <ItemRow
-              key={item.id}
-              item={item}
-              busy={busyIds.has(item.id)}
-              onPause={() => run(item.id, itemsApi.pause)}
-              onResume={() => run(item.id, itemsApi.resume)}
-              onStart={() => run(item.id, itemsApi.start)}
-            />
+        <ul className="item-list" style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {queued.map((item) => (
+            <li key={item.id} className="queue-row">
+              <Thumbnail item={item} className="queue-row__thumb" />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="queue-row__title" title={item.url}>
+                  {item.filename ?? item.url}
+                </div>
+                <div className="queue-row__meta">
+                  {item.source && <span className="badge-source">{item.source}</span>}
+                  <span className="queue-row__duration">{formatDuration(item.duration_seconds)}</span>
+                </div>
+              </div>
+              <button disabled={busyIds.has(item.id)} onClick={() => handleStart(item.id)}>
+                Starten
+              </button>
+              <button
+                className="icon-btn"
+                aria-label={`"${item.filename ?? item.url}" aus der Warteschlange entfernen`}
+                disabled={busyIds.has(item.id)}
+                onClick={() => handleRemove(item.id)}
+              >
+                <CloseIcon />
+              </button>
+            </li>
           ))}
         </ul>
       )}

@@ -1,13 +1,13 @@
 import { useEffect, useRef } from 'react'
-import type { ItemUpdateMessage } from './types'
+import type { WsMessage } from './types'
 
-/** Verbindet sich mit /ws und ruft onItemUpdate für jedes Fortschritts-
- * Frame auf. Baut die Verbindung automatisch neu auf, wenn sie abreißt
- * (z.B. Backend-Neustart) - mit kurzer, fester Pause statt einer Schleife
- * ohne Backoff, die bei dauerhaft totem Backend unnötig heiß liefe. */
-export function useItemUpdates(onItemUpdate: (msg: ItemUpdateMessage) => void): void {
-  const callbackRef = useRef(onItemUpdate)
-  callbackRef.current = onItemUpdate
+/** Verbindet sich mit /ws und ruft onMessage für jedes Frame auf (Fortschritt
+ * oder Entfernung). Baut die Verbindung automatisch neu auf, wenn sie
+ * abreißt (z.B. Backend-Neustart) - mit kurzer, fester Pause statt einer
+ * Schleife ohne Backoff, die bei dauerhaft totem Backend unnötig heiß liefe. */
+export function useWsMessages(onMessage: (msg: WsMessage) => void): void {
+  const callbackRef = useRef(onMessage)
+  callbackRef.current = onMessage
 
   useEffect(() => {
     let socket: WebSocket | null = null
@@ -20,8 +20,8 @@ export function useItemUpdates(onItemUpdate: (msg: ItemUpdateMessage) => void): 
       socket = new WebSocket(`${proto}://${window.location.host}/ws`)
       socket.onmessage = (event) => {
         try {
-          const msg = JSON.parse(event.data) as ItemUpdateMessage
-          if (msg.type === 'item_update') callbackRef.current(msg)
+          const msg = JSON.parse(event.data) as WsMessage
+          if (msg.type === 'item_update' || msg.type === 'item_removed') callbackRef.current(msg)
         } catch {
           // kein gültiges JSON - ignorieren, kein Grund die Verbindung zu kappen
         }

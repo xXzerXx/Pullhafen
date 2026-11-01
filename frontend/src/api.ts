@@ -85,6 +85,9 @@ export const items = {
       method: 'PATCH',
       body: JSON.stringify({ override }),
     }),
+  thumbnailUrl: (id: number) => `/api/items/${id}/thumbnail`,
+  streamUrl: (id: number) => `/api/items/${id}/stream`,
+  remove: (id: number) => request<{ status: string }>(`/api/items/${id}`, { method: 'DELETE' }),
 }
 
 export const catalog = {
@@ -106,6 +109,7 @@ export const settings = {
       method: 'PUT',
       body: JSON.stringify({ subpath }),
     }),
+  listDownloadsRootOptions: () => request<string[]>('/api/settings/downloads-root/options'),
   listRestrictedDomains: () => request<string[]>('/api/settings/restricted-domains'),
   addRestrictedDomain: (domain: string) =>
     request<string[]>('/api/settings/restricted-domains', {

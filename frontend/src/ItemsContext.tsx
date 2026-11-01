@@ -1,18 +1,25 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
 import { items as itemsApi } from './api'
 import type { Item } from './types'
-import { useItemUpdates } from './ws'
+import { useWsMessages } from './ws'
 
 interface ItemsContextValue {
   items: Item[]
   loading: boolean
   reload: () => Promise<void>
   addLink: (url: string) => Promise<Item>
+  removeItem: (id: number) => Promise<void>
+}
+
+export interface TabCounts {
+  queue: number
+  downloads: number
+  library: number
 }
 
 const ItemsContext = createContext<ItemsContextValue | null>(null)
 
-export function ItemsProvider({ children }: { children: ReactNode }) {
+export function ItemsProvider({ children }: { children: (counts: TabCounts) => ReactNode }) {
   const [items, setItems] = useState<Item[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -26,7 +33,11 @@ export function ItemsProvider({ children }: { children: ReactNode }) {
     reload().finally(() => setLoading(false))
   }, [reload])
 
-  useItemUpdates((msg) => {
+  useWsMessages((msg) => {
+    if (msg.type === 'item_removed') {
+      setItems((prev) => prev.filter((i) => i.id !== msg.id))
+      return
+    }
     setItems((prev) => {
       const idx = prev.findIndex((i) => i.id === msg.item.id)
       if (idx === -1) {
@@ -51,8 +62,28 @@ export function ItemsProvider({ children }: { children: ReactNode }) {
     [],
   )
 
+  const removeItem = useCallback(async (id: number) => {
+    await itemsApi.remove(id)
+    setItems((prev) => prev.filter((i) => i.id !== id))
+  }, [])
+
+  // Reiter-Aufteilung nach der von Thomas bestätigten Vorschau: Warteschlange
+  // = wirklich wartend (noch nicht gestartet), Downloads = aktive
+  // Übertragungen inkl. Fehler, Bibliothek = nur Fertiges. hidden_from_downloads
+  // blendet einzelne Einträge aus Downloads aus (Aufräumen), nie aus der
+  // Bibliothek (siehe Plan).
+  const counts: TabCounts = {
+    queue: items.filter((i) => i.status === 'queued').length,
+    downloads: items.filter(
+      (i) => (i.status === 'downloading' || i.status === 'paused' || i.status === 'failed') && !i.hidden_from_downloads,
+    ).length,
+    library: items.filter((i) => i.status === 'completed').length,
+  }
+
   return (
-    <ItemsContext.Provider value={{ items, loading, reload, addLink }}>{children}</ItemsContext.Provider>
+    <ItemsContext.Provider value={{ items, loading, reload, addLink, removeItem }}>
+      {children(counts)}
+    </ItemsContext.Provider>
   )
 }
 

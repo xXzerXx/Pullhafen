@@ -1,16 +1,19 @@
 import asyncio
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from starlette.middleware.sessions import SessionMiddleware
 from sqlalchemy.orm import Session
 
-from app.config import STATIC_DIR
+from app.config import DOWNLOADS_DIR, STATIC_DIR
 from app.database import SessionLocal, get_db
 from app.models import ApiToken, Item, Performer, RestrictedDomain, Tag
 from app.services import api_tokens as api_tokens_service
+from app.services import thumbnails as thumbnails_service
 from app.services.auth import (
     PasswordTooLongError,
     WrongPasswordError,
@@ -198,6 +201,16 @@ def set_downloads_root(
     return DownloadsRootOut(subpath=clean, resolved_path=str(resolve_downloads_root(db)))
 
 
+@app.get("/api/settings/downloads-root/options", response_model=list[str])
+def list_downloads_root_options(_: str = Depends(require_login)) -> list[str]:
+    """Echte Unterordner des gemounteten Downloads-Volumes, fürs Dropdown in
+    den Einstellungen statt freiem Pfad-Eintippen (die Ordner entstehen von
+    selbst durch domain_folder()/item.source, siehe http_engine/ytdlp_engine)."""
+    if not DOWNLOADS_DIR.exists():
+        return []
+    return sorted(p.name for p in DOWNLOADS_DIR.iterdir() if p.is_dir() and not p.name.startswith("."))
+
+
 class LinkIn(BaseModel):
     url: str
 
@@ -214,11 +227,13 @@ class ItemOut(BaseModel):
     error_message: str | None
     source: str | None
     age_limit: int
+    duration_seconds: int | None
     tags: list[str]
     performers: list[str]
     restricted_override: bool | None
     restricted: bool
     hidden_from_downloads: bool
+    created_at: str
 
     @classmethod
     def from_item(
@@ -236,6 +251,8 @@ class ItemOut(BaseModel):
             error_message=item.error_message,
             source=item.source,
             age_limit=item.age_limit,
+            duration_seconds=item.duration_seconds,
+            created_at=item.created_at.isoformat(),
             tags=sorted(tag.name for tag in item.tags),
             performers=sorted(performer.name for performer in item.performers),
             restricted_override=item.restricted_override,
@@ -295,12 +312,14 @@ async def _create_link_item(url: str, db: Session) -> ItemOut:
 
     autostart = get_autostart(db)
     if info is not None:
+        duration = info.get("duration")
         item = Item(
             url=url,
             engine="ytdlp",
             status="queued",
             source=info.get("extractor_key"),
             age_limit=info.get("age_limit") or 0,
+            duration_seconds=round(duration) if isinstance(duration, (int, float)) else None,
         )
         db.add(item)
         db.commit()
@@ -341,6 +360,40 @@ def get_item(item_id: int, db: Session = Depends(get_db), _: str = Depends(requi
         raise HTTPException(status_code=404, detail="Nicht gefunden.")
     domains, threshold = _restricted_context(db)
     return ItemOut.from_item(item, domains, threshold)
+
+
+@app.get("/api/items/{item_id}/thumbnail")
+def get_item_thumbnail(
+    item_id: int, db: Session = Depends(get_db), _: str = Depends(require_login)
+) -> FileResponse:
+    """Extrahiert on-demand das eingebettete Vorschaubild (siehe Stufe 7:
+    yt-dlps EmbedThumbnail-Postprocessor) und cacht es - nur yt-dlp-Items
+    haben eins, generische Dateien liefern bewusst 404, das Frontend zeigt
+    dann ein generisches Icon statt eines kaputten Bild-Tags."""
+    item = db.get(Item, item_id)
+    if item is None or item.engine != "ytdlp" or not item.file_path:
+        raise HTTPException(status_code=404, detail="Kein Vorschaubild verfügbar.")
+    video_path = Path(item.file_path)
+    if not video_path.exists():
+        raise HTTPException(status_code=404, detail="Datei nicht gefunden.")
+    thumb = thumbnails_service.extract_thumbnail(item.id, video_path)
+    if thumb is None:
+        raise HTTPException(status_code=404, detail="Kein Vorschaubild verfügbar.")
+    return FileResponse(thumb)
+
+
+@app.get("/api/items/{item_id}/stream")
+def stream_item(item_id: int, db: Session = Depends(get_db), _: str = Depends(require_login)) -> FileResponse:
+    """Für den Browser-Player in der Bibliothek - Starlettes FileResponse
+    unterstützt Range-Requests schon eingebaut (fürs Vor-/Zurückspulen),
+    kein eigener Code dafür nötig."""
+    item = db.get(Item, item_id)
+    if item is None or not item.file_path:
+        raise HTTPException(status_code=404, detail="Nicht gefunden.")
+    path = Path(item.file_path)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Datei nicht gefunden.")
+    return FileResponse(path, filename=item.filename or path.name)
 
 
 @app.get("/api/items", response_model=list[ItemOut])
@@ -513,14 +566,45 @@ async def start_item(item_id: int, db: Session = Depends(get_db), _: str = Depen
     return ItemOut.from_item(item, domains, threshold)
 
 
+@app.delete("/api/items/{item_id}")
+async def delete_item(item_id: int, db: Session = Depends(get_db), _: str = Depends(require_login)) -> dict:
+    """Aus der Warteschlange entfernen (Vorschau-Design) - nur erlaubt, wenn
+    gerade kein Task läuft (sonst zuerst pausieren) und keine echte Datei auf
+    der Platte liegt, die man damit unbeabsichtigt verwaist zurücklassen
+    würde (ein 'completed' Item löscht man bewusst nicht einfach so weg)."""
+    item = db.get(Item, item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Nicht gefunden.")
+    if dm.is_active(item.id):
+        raise HTTPException(status_code=409, detail="Download läuft gerade - zuerst pausieren.")
+    if item.status == "completed":
+        raise HTTPException(status_code=400, detail="Abgeschlossene Downloads können hier nicht gelöscht werden.")
+    if item.file_path:
+        # Eine pausierte Teildatei bleibt sonst verwaist auf der Platte
+        # liegen - ein 'completed' Item kommt hier nie an (siehe oben).
+        partial = Path(item.file_path)
+        if partial.exists():
+            partial.unlink()
+    db.delete(item)
+    db.commit()
+    await ws_manager.broadcast({"type": "item_removed", "id": item_id})
+    return {"status": "ok"}
+
+
 @app.post("/api/downloads/cleanup")
 def cleanup_downloads(db: Session = Depends(get_db), _: str = Depends(require_login)) -> dict:
-    """Blendet abgeschlossene Downloads aus dem Downloads-Reiter aus (die
-    Bibliothek bleibt unberührt, siehe Item.hidden_from_downloads)."""
+    """Blendet abgeschlossene/fehlgeschlagene Downloads aus dem Downloads-
+    Reiter aus (die Bibliothek bleibt unberührt, siehe Item.hidden_from_downloads).
+    'completed' landet im neuen Reiter-Modell ohnehin in der Bibliothek, nicht
+    mehr in Downloads - diese Filterung bleibt trotzdem bestehen, falls
+    hidden_from_downloads künftig auch anderswo gelesen wird."""
     count = (
         db.query(Item)
-        .filter(Item.status == "completed", Item.hidden_from_downloads == False)  # noqa: E712
-        .update({Item.hidden_from_downloads: True})
+        .filter(
+            Item.status.in_(("completed", "failed")),
+            Item.hidden_from_downloads == False,  # noqa: E712
+        )
+        .update({Item.hidden_from_downloads: True}, synchronize_session=False)
     )
     db.commit()
     return {"removed": count}

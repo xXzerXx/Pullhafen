@@ -44,7 +44,7 @@ export function Login({ onLoggedIn }: { onLoggedIn: (username: string) => void }
           />
         </label>
         {error && <p className="error-text">{error}</p>}
-        <button type="submit" disabled={busy}>
+        <button type="submit" className="btn-accent" style={{ justifyContent: 'center' }} disabled={busy}>
           Anmelden
         </button>
       </form>

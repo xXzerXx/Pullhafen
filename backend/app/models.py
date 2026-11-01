@@ -61,6 +61,10 @@ class Item(Base):
     # dient Stufe 9 (Einschränkungs-Logik) als erste der drei Regel-Ebenen.
     source: Mapped[str | None] = mapped_column(String, nullable=True)
     age_limit: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Sekunden, nur bei engine='ytdlp' aus yt-dlps info-dict ('duration')
+    # übernommen - fürs Bibliotheks-/Warteschlangen-Design (echte Vorschau
+    # mit Laufzeit statt nur Dateiname).
+    duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Ebene 1 der Einschränkungs-Logik (app.services.restricted): None =
     # kein manueller Override, True/False erzwingt eingeschränkt/nicht
     # eingeschränkt unabhängig von Domain-Liste und age_limit.

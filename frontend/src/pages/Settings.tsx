@@ -1,9 +1,29 @@
 import { useEffect, useState } from 'react'
 import { ApiError, apiTokens, auth, type ApiTokenInfo, settings as settingsApi } from '../api'
 import type { AppSettings } from '../types'
+import { ToggleSwitch } from '../components/ToggleSwitch'
+
+const QUALITY_PRESETS = [
+  { label: 'Bestmöglich', value: 'bestvideo+bestaudio/best' },
+  { label: '1080p', value: 'bestvideo[height<=1080]+bestaudio/best[height<=1080]' },
+  { label: '720p', value: 'bestvideo[height<=720]+bestaudio/best[height<=720]' },
+  { label: 'Nur Audio', value: 'bestaudio/best' },
+]
+
+const AGE_THRESHOLD_PRESETS = [
+  { label: 'Keine Alterseinschränkung beachten (0)', value: 0 },
+  { label: 'Ab 13', value: 13 },
+  { label: 'Ab 16', value: 16 },
+  { label: 'Ab 18', value: 18 },
+  { label: 'Ab 21', value: 21 },
+]
+
+const CUSTOM_PATH_OPTION = '__custom__'
 
 export function Settings() {
   const [settings, setSettings] = useState<AppSettings | null>(null)
+  const [pathOptions, setPathOptions] = useState<string[]>([])
+  const [customPath, setCustomPath] = useState(false)
   const [downloadsSubpathInput, setDownloadsSubpathInput] = useState('')
   const [threshold, setThreshold] = useState(18)
   const [domains, setDomains] = useState<string[]>([])
@@ -19,15 +39,18 @@ export function Settings() {
   const [loading, setLoading] = useState(true)
 
   async function loadAll() {
-    const [s, t, d, tok] = await Promise.all([
+    const [s, t, d, tok, opts] = await Promise.all([
       settingsApi.get(),
       settingsApi.getRestrictedThreshold(),
       settingsApi.listRestrictedDomains(),
       apiTokens.list(),
+      settingsApi.listDownloadsRootOptions(),
     ])
     setSettings(s)
     setTokens(tok)
+    setPathOptions(opts)
     setDownloadsSubpathInput(s.downloads_subpath)
+    setCustomPath(s.downloads_subpath !== '' && !opts.includes(s.downloads_subpath))
     setThreshold(t.threshold)
     setDomains(d)
   }
@@ -46,22 +69,34 @@ export function Settings() {
     }
   }
 
-  async function saveDownloadsSubpath() {
+  async function saveDownloadsSubpath(subpath: string) {
     setError(null)
     try {
-      const res = await settingsApi.setDownloadsRoot(downloadsSubpathInput)
-      setSettings((prev) => (prev ? { ...prev, downloads_subpath: res.subpath, resolved_downloads_path: res.resolved_path } : prev))
+      const res = await settingsApi.setDownloadsRoot(subpath)
+      setSettings((prev) =>
+        prev ? { ...prev, downloads_subpath: res.subpath, resolved_downloads_path: res.resolved_path } : prev,
+      )
       setDownloadsSubpathInput(res.subpath)
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Ungültiger Pfad.')
     }
   }
 
-  async function saveThreshold() {
+  function handlePathSelect(value: string) {
+    if (value === CUSTOM_PATH_OPTION) {
+      setCustomPath(true)
+      return
+    }
+    setCustomPath(false)
+    setDownloadsSubpathInput(value)
+    void saveDownloadsSubpath(value)
+  }
+
+  async function saveThreshold(value: number) {
     setError(null)
+    setThreshold(value)
     try {
-      const res = await settingsApi.setRestrictedThreshold(threshold)
-      setThreshold(res.threshold)
+      await settingsApi.setRestrictedThreshold(value)
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Ungültiger Schwellenwert.')
     }
@@ -111,6 +146,8 @@ export function Settings() {
 
   if (loading || !settings) return <div className="page">Lädt…</div>
 
+  const matchingQuality = QUALITY_PRESETS.find((q) => q.value === settings.default_quality)
+
   return (
     <div className="page settings-page">
       {error && <p className="error-text">{error}</p>}
@@ -118,63 +155,81 @@ export function Settings() {
       <section>
         <h2>Downloads</h2>
         <label>
-          Downloadordner (Unterpfad im Volume)
+          Downloadordner
+          <select value={customPath ? CUSTOM_PATH_OPTION : downloadsSubpathInput} onChange={(e) => handlePathSelect(e.target.value)}>
+            <option value="">Wurzel des Downloads-Volumes</option>
+            {pathOptions.map((opt) => (
+              <option key={opt} value={opt}>
+                {opt}
+              </option>
+            ))}
+            <option value={CUSTOM_PATH_OPTION}>Anderer Pfad…</option>
+          </select>
+        </label>
+        {customPath && (
           <input
+            placeholder="z.B. filme/2026"
             value={downloadsSubpathInput}
             onChange={(e) => setDownloadsSubpathInput(e.target.value)}
-            onBlur={saveDownloadsSubpath}
+            onBlur={(e) => saveDownloadsSubpath(e.target.value)}
           />
-        </label>
+        )}
         <p className="hint">Tatsächlicher Pfad: {settings.resolved_downloads_path}</p>
 
         <label>
-          Standardqualität (yt-dlp-Format)
-          <input
-            defaultValue={settings.default_quality}
-            onBlur={(e) => patch({ default_quality: e.target.value })}
-          />
+          Standardqualität
+          <select
+            value={matchingQuality ? matchingQuality.value : QUALITY_PRESETS[0].value}
+            onChange={(e) => patch({ default_quality: e.target.value })}
+          >
+            {QUALITY_PRESETS.map((q) => (
+              <option key={q.value} value={q.value}>
+                {q.label}
+              </option>
+            ))}
+          </select>
         </label>
+        {!matchingQuality && (
+          <p className="hint">Aktuell gesetzt: {settings.default_quality} (eigener Wert, nicht in der Liste)</p>
+        )}
 
         <label>
           Maximale parallele Downloads
-          <input
-            type="number"
-            min={1}
-            defaultValue={settings.max_concurrent_downloads}
-            onBlur={(e) => patch({ max_concurrent_downloads: Number(e.target.value) })}
-          />
+          <select
+            value={settings.max_concurrent_downloads}
+            onChange={(e) => patch({ max_concurrent_downloads: Number(e.target.value) })}
+          >
+            {[1, 2, 3, 4, 5, 8].map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
         </label>
 
-        <label className="checkbox-label">
-          <input
-            type="checkbox"
-            checked={settings.autostart}
-            onChange={(e) => patch({ autostart: e.target.checked })}
-          />
-          Neue Links automatisch starten
-        </label>
-
-        <label className="checkbox-label">
-          <input
-            type="checkbox"
-            checked={settings.auto_remove_completed}
-            onChange={(e) => patch({ auto_remove_completed: e.target.checked })}
-          />
-          Abgeschlossene Downloads automatisch aus der Liste entfernen
-        </label>
+        <ToggleSwitch
+          label="Neue Links automatisch starten"
+          checked={settings.autostart}
+          onChange={(checked) => patch({ autostart: checked })}
+        />
+        <ToggleSwitch
+          label="Abgeschlossene/fehlgeschlagene Downloads automatisch ausblenden"
+          checked={settings.auto_remove_completed}
+          onChange={(checked) => patch({ auto_remove_completed: checked })}
+        />
       </section>
 
       <section>
         <h2>Einschränkungs-Logik</h2>
         <label>
-          Schwellenwert (age_limit)
-          <input
-            type="number"
-            min={0}
-            value={threshold}
-            onChange={(e) => setThreshold(Number(e.target.value))}
-            onBlur={saveThreshold}
-          />
+          Schwellenwert
+          <select value={threshold} onChange={(e) => saveThreshold(Number(e.target.value))}>
+            {AGE_THRESHOLD_PRESETS.map((t) => (
+              <option key={t.value} value={t.value}>
+                {t.label}
+              </option>
+            ))}
+          </select>
         </label>
 
         <div>
@@ -187,7 +242,7 @@ export function Settings() {
             ))}
             {domains.length === 0 && <li className="empty-hint">Keine Domains gelistet.</li>}
           </ul>
-          <div className="add-link-form">
+          <div className="inline-form">
             <input
               placeholder="z.B. example.com"
               value={newDomain}
@@ -219,7 +274,7 @@ export function Settings() {
           ))}
           {tokens.length === 0 && <li className="empty-hint">Noch kein Token erzeugt.</li>}
         </ul>
-        <div className="add-link-form">
+        <div className="inline-form">
           <input
             placeholder="Bezeichnung, z.B. 'Firefox am Laptop'"
             value={newTokenLabel}
