@@ -309,6 +309,24 @@ main {
   color: var(--text-muted);
   font-size: 0.85rem;
 }
+.safari-prompt {
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.safari-prompt p {
+  margin: 0;
+  font-size: 0.9rem;
+}
+.safari-prompt__actions {
+  display: flex;
+  gap: 10px;
+}
 
 /* --- Toggle switch --- */
 
@@ -426,6 +444,15 @@ main {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.queue-row__url,
+.download-card__url {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 1px;
 }
 .queue-row__meta {
   display: flex;
@@ -677,6 +704,47 @@ main {
   font-size: 11px;
   border-radius: 4px;
 }
+.tag-editor__suggestions {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  max-height: 160px;
+  overflow-y: auto;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+}
+.tag-editor__suggestions li {
+  display: block;
+}
+.tag-editor__suggestions button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 5px 8px;
+  font-size: 12px;
+  border-radius: 5px;
+  color: var(--text);
+}
+.tag-editor__suggestions button:hover {
+  background: var(--accent-soft);
+  border-color: transparent;
+}
+.tag-editor__expand {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--surface-raised);
+  color: var(--text-muted);
+}
 .library-card__actions {
   display: flex;
   gap: 8px;
@@ -774,6 +842,27 @@ main {
   border-radius: 8px;
   background: #000;
   display: block;
+}
+.player-dialog__fallback {
+  background: #000;
+  border-radius: 8px;
+  padding: 48px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  text-align: center;
+}
+.player-dialog__fallback p {
+  color: var(--text-muted);
+  max-width: 480px;
+  margin: 0;
+}
+.player-dialog__fallback a {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  text-decoration: none;
 }
 
 /* --- Login --- */

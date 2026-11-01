@@ -81,9 +81,12 @@ export function Downloads() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       {running && <span className="live-dot" aria-hidden="true" />}
                       <div className="download-card__title" title={item.url}>
-                        {item.filename ?? item.url}
+                        {item.title ?? item.filename ?? item.url}
                       </div>
                     </div>
+                    {(item.title || item.filename) && (
+                      <div className="download-card__url">{item.url}</div>
+                    )}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
                       {item.source && <span className="badge-source">{item.source}</span>}
                       <span

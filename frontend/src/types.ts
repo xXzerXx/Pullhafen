@@ -14,6 +14,8 @@ export interface Item {
   source: string | null
   age_limit: number
   duration_seconds: number | null
+  title: string | null
+  channel: string | null
   tags: string[]
   performers: string[]
   restricted_override: boolean | null

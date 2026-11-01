@@ -65,6 +65,13 @@ class Item(Base):
     # übernommen - fürs Bibliotheks-/Warteschlangen-Design (echte Vorschau
     # mit Laufzeit statt nur Dateiname).
     duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Echter Videotitel aus yt-dlps info-dict, schon beim Klassifizieren
+    # gesetzt - anders als filename (erst nach echtem Download bekannt),
+    # damit Warteschlange/Downloads einen lesbaren Titel statt nur der
+    # rohen URL zeigen können, bevor überhaupt etwas heruntergeladen wurde.
+    title: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Kanal/Uploader, für den Bibliotheks-Filter.
+    channel: Mapped[str | None] = mapped_column(String, nullable=True)
     # Ebene 1 der Einschränkungs-Logik (app.services.restricted): None =
     # kein manueller Override, True/False erzwingt eingeschränkt/nicht
     # eingeschränkt unabhängig von Domain-Liste und age_limit.

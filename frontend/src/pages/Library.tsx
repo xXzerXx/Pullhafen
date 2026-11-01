@@ -9,7 +9,14 @@ import { formatDuration, formatRelative } from '../format'
 import { ToggleSwitch } from '../components/ToggleSwitch'
 import { TagEditor } from '../components/TagEditor'
 
-function LibraryCard({ item, onPlay }: { item: Item; onPlay: (item: Item) => void }) {
+interface LibraryCardProps {
+  item: Item
+  onPlay: (item: Item) => void
+  knownTags: string[]
+  knownPerformers: string[]
+}
+
+function LibraryCard({ item, onPlay, knownTags, knownPerformers }: LibraryCardProps) {
   const { reload } = useItems()
   const [saving, setSaving] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -52,21 +59,23 @@ function LibraryCard({ item, onPlay }: { item: Item; onPlay: (item: Item) => voi
         <span className="library-card__duration-badge">{formatDuration(item.duration_seconds)}</span>
       </Thumbnail>
       <div className="library-card__body">
-        <div className="library-card__title" title={item.filename ?? item.url}>
-          {item.filename ?? item.url}
+        <div className="library-card__title" title={item.title ?? item.filename ?? item.url}>
+          {item.title ?? item.filename ?? item.url}
         </div>
         <div className="library-card__meta">
           {item.source && <span className="badge-source">{item.source}</span>}
+          {item.channel && <span className="badge-source">{item.channel}</span>}
           <span className="library-card__added">{formatRelative(item.created_at)}</span>
           {item.restricted && <span className="badge-restricted">Eingeschränkt</span>}
         </div>
 
         <div className="library-card__edit">
-          <TagEditor label="Tags" values={item.tags} onChange={saveTags} />
+          <TagEditor label="Tags" values={item.tags} knownValues={knownTags} onChange={saveTags} />
           <TagEditor
             label="Darsteller:innen"
             values={item.performers}
             chipClassName="chip--performer"
+            knownValues={knownPerformers}
             onChange={savePerformers}
           />
         </div>
@@ -123,6 +132,7 @@ export function Library({ search, onSearchChange }: { search: string; onSearchCh
   const [tagFilter, setTagFilter] = useState('')
   const [performerFilter, setPerformerFilter] = useState('')
   const [sourceFilter, setSourceFilter] = useState('')
+  const [channelFilter, setChannelFilter] = useState('')
   const [sortOrder, setSortOrder] = useState<'newest' | 'oldest' | 'title'>('newest')
   const [playing, setPlaying] = useState<Item | null>(null)
   // Standardmäßig an (Datenschutz war der eigentliche Grund für die ganze
@@ -142,18 +152,26 @@ export function Library({ search, onSearchChange }: { search: string; onSearchCh
     () => Array.from(new Set(completed.map((i) => i.source).filter((s): s is string => !!s))).sort(),
     [completed],
   )
+  const allChannels = useMemo(
+    () => Array.from(new Set(completed.map((i) => i.channel).filter((c): c is string => !!c))).sort(),
+    [completed],
+  )
 
   const filtered = completed
     .filter((i) => {
       if (hideRestricted && i.restricted) return false
-      if (search && !(i.filename ?? i.url).toLowerCase().includes(search.toLowerCase())) return false
+      const label = (i.title ?? i.filename ?? i.url).toLowerCase()
+      if (search && !label.includes(search.toLowerCase())) return false
       if (tagFilter && !i.tags.includes(tagFilter)) return false
       if (performerFilter && !i.performers.includes(performerFilter)) return false
       if (sourceFilter && i.source !== sourceFilter) return false
+      if (channelFilter && i.channel !== channelFilter) return false
       return true
     })
     .sort((a, b) => {
-      if (sortOrder === 'title') return (a.filename ?? a.url).localeCompare(b.filename ?? b.url)
+      if (sortOrder === 'title') {
+        return (a.title ?? a.filename ?? a.url).localeCompare(b.title ?? b.filename ?? b.url)
+      }
       const cmp = new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
       return sortOrder === 'newest' ? -cmp : cmp
     })
@@ -193,6 +211,19 @@ export function Library({ search, onSearchChange }: { search: string; onSearchCh
             ))}
           </select>
         </span>
+        {allChannels.length > 0 && (
+          <span className="filter-chip">
+            Kanal
+            <select value={channelFilter} onChange={(e) => setChannelFilter(e.target.value)}>
+              <option value="">alle</option>
+              {allChannels.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </span>
+        )}
         <span className="filter-chip">
           Tags
           <select value={tagFilter} onChange={(e) => setTagFilter(e.target.value)}>
@@ -230,7 +261,13 @@ export function Library({ search, onSearchChange }: { search: string; onSearchCh
       ) : (
         <div className="library-grid">
           {filtered.map((item) => (
-            <LibraryCard key={item.id} item={item} onPlay={setPlaying} />
+            <LibraryCard
+              key={item.id}
+              item={item}
+              onPlay={setPlaying}
+              knownTags={allTags}
+              knownPerformers={allPerformers}
+            />
           ))}
         </div>
       )}

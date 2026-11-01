@@ -59,8 +59,9 @@ export function Queue() {
               <Thumbnail item={item} className="queue-row__thumb" />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="queue-row__title" title={item.url}>
-                  {item.filename ?? item.url}
+                  {item.title ?? item.filename ?? item.url}
                 </div>
+                {(item.title || item.filename) && <div className="queue-row__url">{item.url}</div>}
                 <div className="queue-row__meta">
                   {item.source && <span className="badge-source">{item.source}</span>}
                   <span className="queue-row__duration">{formatDuration(item.duration_seconds)}</span>
@@ -71,7 +72,7 @@ export function Queue() {
               </button>
               <button
                 className="icon-btn"
-                aria-label={`"${item.filename ?? item.url}" aus der Warteschlange entfernen`}
+                aria-label={`"${item.title ?? item.filename ?? item.url}" aus der Warteschlange entfernen`}
                 disabled={busyIds.has(item.id)}
                 onClick={() => handleRemove(item.id)}
               >

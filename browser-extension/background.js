@@ -14,19 +14,25 @@ chrome.contextMenus.onClicked.addListener((info) => {
   }
 });
 
-chrome.action.onClicked.addListener((tab) => {
-  if (tab.url) handleLinkClicked(tab.url);
+// Das Symbol öffnet seit dem Zwischenablage-Feature ein Popup
+// (siehe manifest.json "default_popup") statt direkt zu senden - das Popup
+// ruft stattdessen handleAddLink() per Message auf, um echtes Feedback
+// (statt nur ein Badge) im Popup selbst anzeigen zu können.
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg?.type === "pullhafen-add-link" && msg.url) {
+    handleAddLink(msg.url).then(sendResponse);
+    return true;
+  }
 });
 
 // Exportiert als benannte Funktion (statt nur als Closure im Listener), damit
 // Tests den exakt gleichen Code direkt im Service-Worker aufrufen können,
 // ohne ein natives Kontextmenü simulieren zu müssen - echtes Rechtsklick-UI
 // ist von außerhalb des Browsers selbst nicht automatisierbar.
-async function handleLinkClicked(url) {
+async function handleAddLink(url) {
   const { backendUrl, token } = await chrome.storage.local.get(["backendUrl", "token"]);
   if (!backendUrl || !token) {
-    await setBadge("!", "#e0a940");
-    return;
+    return { ok: false, reason: "no-config" };
   }
   try {
     const res = await fetch(`${backendUrl.replace(/\/$/, "")}/api/extension/links`, {
@@ -37,12 +43,19 @@ async function handleLinkClicked(url) {
       },
       body: JSON.stringify({ url }),
     });
-    if (res.ok) {
-      await setBadge("✓", "#3fb97f");
-    } else {
-      await setBadge("✗", "#e05b5b");
-    }
+    return { ok: res.ok, reason: res.ok ? undefined : "server" };
   } catch {
+    return { ok: false, reason: "network" };
+  }
+}
+
+async function handleLinkClicked(url) {
+  const result = await handleAddLink(url);
+  if (result.ok) {
+    await setBadge("✓", "#3fb97f");
+  } else if (result.reason === "no-config") {
+    await setBadge("!", "#e0a940");
+  } else {
     await setBadge("✗", "#e05b5b");
   }
 }
@@ -54,5 +67,6 @@ async function setBadge(text, color) {
 }
 
 // Für die echte Browser-Testfahrt (siehe backend-unabhängiges Testskript):
-// macht die Funktion im Service-Worker-Global-Scope aufrufbar.
+// macht die Funktionen im Service-Worker-Global-Scope aufrufbar.
 globalThis.__pullhafenHandleLinkClicked = handleLinkClicked;
+globalThis.__pullhafenHandleAddLink = handleAddLink;

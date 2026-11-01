@@ -218,6 +218,8 @@ class ItemOut(BaseModel):
     source: str | None
     age_limit: int
     duration_seconds: int | None
+    title: str | None
+    channel: str | None
     tags: list[str]
     performers: list[str]
     restricted_override: bool | None
@@ -242,6 +244,8 @@ class ItemOut(BaseModel):
             source=item.source,
             age_limit=item.age_limit,
             duration_seconds=item.duration_seconds,
+            title=item.title,
+            channel=item.channel,
             created_at=item.created_at.isoformat(),
             tags=sorted(tag.name for tag in item.tags),
             performers=sorted(performer.name for performer in item.performers),
@@ -310,10 +314,22 @@ async def _create_link_item(url: str, db: Session) -> ItemOut:
             source=info.get("extractor_key"),
             age_limit=info.get("age_limit") or 0,
             duration_seconds=round(duration) if isinstance(duration, (int, float)) else None,
+            title=info.get("title"),
+            channel=info.get("channel") or info.get("uploader"),
         )
         db.add(item)
         db.commit()
         db.refresh(item)
+        # Echte, von der Seite selbst vergebene Video-Tags (z.B. YouTubes
+        # eigene Tags) automatisch übernehmen - auf 10 begrenzt, manche
+        # Videos haben davon sehr viele und nicht jedes ist hilfreich.
+        # "Darsteller:innen" hat dagegen kein verlässliches, seitenübergreifendes
+        # Äquivalent bei yt-dlp - bewusst nicht erfunden, bleibt manuell.
+        site_tags = info.get("tags")
+        if isinstance(site_tags, list) and site_tags:
+            names = {str(t).strip() for t in site_tags[:10] if str(t).strip()}
+            item.tags = [_get_or_create(db, Tag, name) for name in sorted(names)]
+            db.commit()
         if autostart:
             dm.queue_ytdlp_download(item.id)
     else:

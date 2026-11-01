@@ -17,6 +17,17 @@ const QUALITY_PRESETS = [
   { label: 'Kompatibel (H.264/mp4 - auch für Safari/iOS)', value: 'compatible' },
 ]
 
+const SAFARI_PROMPT_DISMISSED_KEY = 'pullhafen:safari-compat-prompt-dismissed'
+
+// Echte Verhaltensprüfung statt User-Agent-Raten: Safari (und wenige andere)
+// können VP9 in WebM nicht nativ abspielen - exakt der Codec, den yt-dlps
+// "best"-Auswahl für die meisten Videos liefert und der in Chromium klappt,
+// in Safari aber schwarz bleibt (siehe VideoPlayer-Fallback).
+function browserLikelyLacksVp9(): boolean {
+  const probe = document.createElement('video')
+  return probe.canPlayType('video/webm; codecs="vp09.00.10.08"') === ''
+}
+
 const AGE_THRESHOLD_PRESETS = [
   { label: 'Keine Alterseinschränkung beachten (0)', value: 0 },
   { label: 'Ab 13', value: 13 },
@@ -60,6 +71,7 @@ export function Settings() {
   const [passwordStatus, setPasswordStatus] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [showSafariPrompt, setShowSafariPrompt] = useState(false)
 
   async function loadAll() {
     const [s, t, d, tok] = await Promise.all([
@@ -78,6 +90,23 @@ export function Settings() {
   useEffect(() => {
     loadAll().finally(() => setLoading(false))
   }, [])
+
+  useEffect(() => {
+    if (!settings || loading) return
+    if (settings.default_quality === 'compatible') return
+    if (window.localStorage.getItem(SAFARI_PROMPT_DISMISSED_KEY) === '1') return
+    if (browserLikelyLacksVp9()) setShowSafariPrompt(true)
+  }, [settings, loading])
+
+  function dismissSafariPrompt() {
+    window.localStorage.setItem(SAFARI_PROMPT_DISMISSED_KEY, '1')
+    setShowSafariPrompt(false)
+  }
+
+  async function acceptSafariPrompt() {
+    await patch({ default_quality: 'compatible' })
+    dismissSafariPrompt()
+  }
 
   async function patch(body: Partial<AppSettings>) {
     setError(null)
@@ -172,6 +201,22 @@ export function Settings() {
   return (
     <div className="page settings-page">
       {error && <p className="error-text">{error}</p>}
+
+      {showSafariPrompt && (
+        <div className="safari-prompt">
+          <p>
+            Dieser Browser kann VP9-Videos nicht nativ abspielen (z.B. Safari) - das ist yt-dlps
+            Standardformat für die meiste Qualität. Als Standardqualität das kompatible Format
+            (H.264/mp4) setzen?
+          </p>
+          <div className="safari-prompt__actions">
+            <button className="btn-accent" onClick={acceptSafariPrompt}>
+              Ja, als Standard setzen
+            </button>
+            <button onClick={dismissSafariPrompt}>Nein, danke</button>
+          </div>
+        </div>
+      )}
 
       <section>
         <h2>Downloads</h2>

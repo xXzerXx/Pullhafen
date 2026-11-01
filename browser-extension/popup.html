@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Pullhafen</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        background: #12161c;
+        color: #e4e8ee;
+        width: 300px;
+        margin: 0;
+        padding: 14px 16px;
+      }
+      h1 {
+        font-size: 0.95rem;
+        margin: 0 0 10px;
+      }
+      .row {
+        margin-bottom: 12px;
+      }
+      .label {
+        font-size: 0.75rem;
+        color: #8c98a8;
+        margin-bottom: 4px;
+      }
+      .value {
+        font-size: 0.82rem;
+        word-break: break-all;
+        margin-bottom: 8px;
+        color: #c3cad6;
+      }
+      button {
+        font: inherit;
+        width: 100%;
+        background: #e8a33d;
+        color: #1a1304;
+        border: none;
+        border-radius: 6px;
+        padding: 9px 12px;
+        cursor: pointer;
+        font-weight: 600;
+      }
+      button:disabled {
+        opacity: 0.6;
+        cursor: default;
+      }
+      button.secondary {
+        background: #222a35;
+        color: #e4e8ee;
+        border: 1px solid #2c3542;
+      }
+      #status {
+        margin-top: 10px;
+        font-size: 0.8rem;
+        color: #8c98a8;
+        min-height: 1em;
+      }
+      #clipboard-section[hidden],
+      #tab-section[hidden] {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Pullhafen</h1>
+
+    <div class="row" id="clipboard-section" hidden>
+      <div class="label">Link in der Zwischenablage erkannt</div>
+      <div class="value" id="clipboard-link-text"></div>
+      <button id="add-clipboard">Diesen Link hinzufügen</button>
+    </div>
+
+    <div class="row" id="tab-section">
+      <div class="label">Aktuelle Seite</div>
+      <div class="value" id="tab-title"></div>
+      <button class="secondary" id="add-tab">Aktuelle Seite hinzufügen</button>
+    </div>
+
+    <p id="status"></p>
+    <script src="popup.js"></script>
+  </body>
+</html>
