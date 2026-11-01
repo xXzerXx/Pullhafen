@@ -4,8 +4,9 @@ import { useItems } from '../ItemsContext'
 import type { Item } from '../types'
 import { Thumbnail } from '../components/Thumbnail'
 import { VideoPlayer } from '../components/VideoPlayer'
-import { PlayIcon, FolderIcon } from '../components/icons'
+import { PlayIcon, FolderIcon, DownloadIcon } from '../components/icons'
 import { formatDuration, formatRelative } from '../format'
+import { ToggleSwitch } from '../components/ToggleSwitch'
 
 function LibraryCard({ item, onPlay }: { item: Item; onPlay: (item: Item) => void }) {
   const { reload } = useItems()
@@ -81,7 +82,19 @@ function LibraryCard({ item, onPlay }: { item: Item; onPlay: (item: Item) => voi
         <div className="library-card__edit">
           <label>
             Tags (kommagetrennt)
-            <input value={tagsInput} onChange={(e) => setTagsInput(e.target.value)} onBlur={saveTags} />
+            <input
+              value={tagsInput}
+              onChange={(e) => setTagsInput(e.target.value)}
+              onBlur={saveTags}
+              onKeyDown={(e) => {
+                // Enter ist die naheliegende Erwartung zum Bestätigen - vorher
+                // griff nur onBlur, Enter tat buchstäblich nichts (echter
+                // Fund: Thomas tippte Tags, drückte Enter, nichts wurde
+                // gespeichert). blur() löst onBlur ohnehin aus, kein doppeltes
+                // Speichern.
+                if (e.key === 'Enter') e.currentTarget.blur()
+              }}
+            />
           </label>
           <label>
             Darsteller:innen
@@ -89,6 +102,9 @@ function LibraryCard({ item, onPlay }: { item: Item; onPlay: (item: Item) => voi
               value={performersInput}
               onChange={(e) => setPerformersInput(e.target.value)}
               onBlur={savePerformers}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') e.currentTarget.blur()
+              }}
             />
           </label>
         </div>
@@ -133,6 +149,14 @@ function LibraryCard({ item, onPlay }: { item: Item; onPlay: (item: Item) => voi
             <PlayIcon size={13} />
             Abspielen
           </button>
+          <a
+            href={itemsApi.streamUrl(item.id)}
+            download={item.filename ?? undefined}
+            aria-label="Datei herunterladen"
+            title="Herunterladen (falls Abspielen im Browser nicht geht, z.B. in Safari)"
+          >
+            <DownloadIcon />
+          </a>
           <button
             aria-label="Speicherort kopieren"
             title={item.file_path ?? undefined}
@@ -153,8 +177,13 @@ export function Library({ search, onSearchChange }: { search: string; onSearchCh
   const [sourceFilter, setSourceFilter] = useState('')
   const [sortOrder, setSortOrder] = useState<'newest' | 'oldest' | 'title'>('newest')
   const [playing, setPlaying] = useState<Item | null>(null)
+  // Standardmäßig an (Datenschutz war der eigentliche Grund für die ganze
+  // Einschränkungs-Logik, siehe Plan) - bewusst kein persistenter Zustand,
+  // damit es nie "versehentlich dauerhaft sichtbar" bleibt.
+  const [hideRestricted, setHideRestricted] = useState(true)
 
   const completed = items.filter((i) => i.status === 'completed')
+  const restrictedCount = completed.filter((i) => i.restricted).length
 
   const allTags = useMemo(() => Array.from(new Set(completed.flatMap((i) => i.tags))).sort(), [completed])
   const allPerformers = useMemo(
@@ -168,6 +197,7 @@ export function Library({ search, onSearchChange }: { search: string; onSearchCh
 
   const filtered = completed
     .filter((i) => {
+      if (hideRestricted && i.restricted) return false
       if (search && !(i.filename ?? i.url).toLowerCase().includes(search.toLowerCase())) return false
       if (tagFilter && !i.tags.includes(tagFilter)) return false
       if (performerFilter && !i.performers.includes(performerFilter)) return false
@@ -187,8 +217,14 @@ export function Library({ search, onSearchChange }: { search: string; onSearchCh
           <div className="section-head__title">Bibliothek</div>
           <div className="section-head__subtitle">
             {filtered.length} von {completed.length} Videos angezeigt
+            {restrictedCount > 0 && hideRestricted && ` (${restrictedCount} eingeschränkt ausgeblendet)`}
           </div>
         </div>
+        <ToggleSwitch
+          label="Eingeschränkte Inhalte ausblenden"
+          checked={hideRestricted}
+          onChange={setHideRestricted}
+        />
       </div>
 
       <div className="library-toolbar">

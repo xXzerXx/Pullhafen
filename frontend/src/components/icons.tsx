@@ -128,6 +128,27 @@ export function FileTextIcon({ size = 16, className }: IconProps) {
   )
 }
 
+export function DownloadIcon({ size = 13, className }: IconProps) {
+  return (
+    <svg
+      aria-hidden="true"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      <path d="M12 3v12" />
+      <path d="M7 10l5 5 5-5" />
+      <path d="M4 19h16" />
+    </svg>
+  )
+}
+
 export function FilmIcon({ size = 18, className }: IconProps) {
   return (
     <svg

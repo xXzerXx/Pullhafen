@@ -109,7 +109,6 @@ export const settings = {
       method: 'PUT',
       body: JSON.stringify({ subpath }),
     }),
-  listDownloadsRootOptions: () => request<string[]>('/api/settings/downloads-root/options'),
   listRestrictedDomains: () => request<string[]>('/api/settings/restricted-domains'),
   addRestrictedDomain: (domain: string) =>
     request<string[]>('/api/settings/restricted-domains', {

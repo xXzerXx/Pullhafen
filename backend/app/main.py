@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from starlette.middleware.sessions import SessionMiddleware
 from sqlalchemy.orm import Session
 
-from app.config import DOWNLOADS_DIR, STATIC_DIR
+from app.config import STATIC_DIR
 from app.database import SessionLocal, get_db
 from app.models import ApiToken, Item, Performer, RestrictedDomain, Tag
 from app.services import api_tokens as api_tokens_service
@@ -199,16 +199,6 @@ def set_downloads_root(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     set_setting(db, DOWNLOADS_SUBPATH_KEY, clean)
     return DownloadsRootOut(subpath=clean, resolved_path=str(resolve_downloads_root(db)))
-
-
-@app.get("/api/settings/downloads-root/options", response_model=list[str])
-def list_downloads_root_options(_: str = Depends(require_login)) -> list[str]:
-    """Echte Unterordner des gemounteten Downloads-Volumes, fürs Dropdown in
-    den Einstellungen statt freiem Pfad-Eintippen (die Ordner entstehen von
-    selbst durch domain_folder()/item.source, siehe http_engine/ytdlp_engine)."""
-    if not DOWNLOADS_DIR.exists():
-        return []
-    return sorted(p.name for p in DOWNLOADS_DIR.iterdir() if p.is_dir() and not p.name.startswith("."))
 
 
 class LinkIn(BaseModel):

@@ -650,6 +650,21 @@ main {
   border-top: 1px solid var(--border);
   padding-top: 10px;
 }
+.library-card__actions a {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: 6px;
+  padding: 6px 9px;
+  cursor: pointer;
+}
+.library-card__actions a:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
 .library-card__play {
   flex: 1;
   display: flex;

@@ -14,7 +14,18 @@ class VideoUnavailableError(Exception):
 
 
 def _base_opts() -> dict:
-    return {"quiet": True, "no_warnings": True, "noprogress": True}
+    return {
+        "quiet": True,
+        "no_warnings": True,
+        "noprogress": True,
+        # Echter, ernster Fund: ohne das lädt yt-dlp bei einem Link mit
+        # einem list=-Parameter (YouTube-Mix/Radio/Playlist) die GESAMTE
+        # Playlist als einen einzigen Download herunter - bei Thomas real
+        # ~15GB über 100+ Einzelvideos, bis YouTube es irgendwann mit einem
+        # 503 gestoppt hat. Pullhafen ist als "eine URL = ein Item" gebaut,
+        # darum hier hart auf das einzelne verlinkte Video beschränkt.
+        "noplaylist": True,
+    }
 
 
 def _matches_specific_extractor(url: str) -> bool:

@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { ApiError, apiTokens, auth, type ApiTokenInfo, settings as settingsApi } from '../api'
 import type { AppSettings } from '../types'
 import { ToggleSwitch } from '../components/ToggleSwitch'
+import { useItems } from '../ItemsContext'
 
 const QUALITY_PRESETS = [
   { label: 'Bestmöglich', value: 'bestvideo+bestaudio/best' },
@@ -18,16 +19,31 @@ const AGE_THRESHOLD_PRESETS = [
   { label: 'Ab 21', value: 21 },
 ]
 
-const CUSTOM_PATH_OPTION = '__custom__'
-
 export function Settings() {
+  const { items } = useItems()
   const [settings, setSettings] = useState<AppSettings | null>(null)
-  const [pathOptions, setPathOptions] = useState<string[]>([])
-  const [customPath, setCustomPath] = useState(false)
   const [downloadsSubpathInput, setDownloadsSubpathInput] = useState('')
   const [threshold, setThreshold] = useState(18)
   const [domains, setDomains] = useState<string[]>([])
   const [newDomain, setNewDomain] = useState('')
+
+  // Für die Domain-Liste: echte, schon bekannte Domains aus bisherigen
+  // Downloads, statt den Namen blind eintippen zu müssen. BEWUSST die echte
+  // URL-Hostname genommen, nicht item.source (das ist yt-dlps extractor_key
+  // wie "Youtube" - der Server vergleicht Einschränkungs-Domains aber gegen
+  // die echte Hostname aus der URL, z.B. "www.youtube.com". "Youtube" als
+  // Eintrag hätte nie wirklich etwas eingeschränkt).
+  const knownSources = useMemo(() => {
+    const names = new Set<string>()
+    for (const item of items) {
+      try {
+        names.add(new URL(item.url).hostname.toLowerCase())
+      } catch {
+        // keine gültige URL (sollte nicht vorkommen) - überspringen
+      }
+    }
+    return Array.from(names).sort()
+  }, [items])
   const [tokens, setTokens] = useState<ApiTokenInfo[]>([])
   const [newTokenLabel, setNewTokenLabel] = useState('')
   const [justCreatedToken, setJustCreatedToken] = useState<string | null>(null)
@@ -39,18 +55,15 @@ export function Settings() {
   const [loading, setLoading] = useState(true)
 
   async function loadAll() {
-    const [s, t, d, tok, opts] = await Promise.all([
+    const [s, t, d, tok] = await Promise.all([
       settingsApi.get(),
       settingsApi.getRestrictedThreshold(),
       settingsApi.listRestrictedDomains(),
       apiTokens.list(),
-      settingsApi.listDownloadsRootOptions(),
     ])
     setSettings(s)
     setTokens(tok)
-    setPathOptions(opts)
     setDownloadsSubpathInput(s.downloads_subpath)
-    setCustomPath(s.downloads_subpath !== '' && !opts.includes(s.downloads_subpath))
     setThreshold(t.threshold)
     setDomains(d)
   }
@@ -80,16 +93,6 @@ export function Settings() {
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Ungültiger Pfad.')
     }
-  }
-
-  function handlePathSelect(value: string) {
-    if (value === CUSTOM_PATH_OPTION) {
-      setCustomPath(true)
-      return
-    }
-    setCustomPath(false)
-    setDownloadsSubpathInput(value)
-    void saveDownloadsSubpath(value)
   }
 
   async function saveThreshold(value: number) {
@@ -155,26 +158,20 @@ export function Settings() {
       <section>
         <h2>Downloads</h2>
         <label>
-          Downloadordner
-          <select value={customPath ? CUSTOM_PATH_OPTION : downloadsSubpathInput} onChange={(e) => handlePathSelect(e.target.value)}>
-            <option value="">Wurzel des Downloads-Volumes</option>
-            {pathOptions.map((opt) => (
-              <option key={opt} value={opt}>
-                {opt}
-              </option>
-            ))}
-            <option value={CUSTOM_PATH_OPTION}>Anderer Pfad…</option>
-          </select>
-        </label>
-        {customPath && (
+          Downloadordner (Unterpfad im Volume, leer = Wurzel)
           <input
-            placeholder="z.B. filme/2026"
+            placeholder="leer lassen oder z.B. filme/2026"
             value={downloadsSubpathInput}
             onChange={(e) => setDownloadsSubpathInput(e.target.value)}
             onBlur={(e) => saveDownloadsSubpath(e.target.value)}
           />
-        )}
-        <p className="hint">Tatsächlicher Pfad: {settings.resolved_downloads_path}</p>
+        </label>
+        <p className="hint">
+          Tatsächlicher Pfad: {settings.resolved_downloads_path}. Achtung: Pullhafen legt pro Quelle (z.B.
+          "Youtube") automatisch einen eigenen Unterordner darunter an - hier selbst schon "Youtube" o.ä.
+          einzutragen führt zu einer doppelten Verschachtelung. Dieses Feld ist für eine eigene Oberkategorie
+          gedacht (z.B. "archiv" oder "2026"), nicht für einen der automatisch entstandenen Quellordner.
+        </p>
 
         <label>
           Standardqualität
@@ -242,6 +239,19 @@ export function Settings() {
             ))}
             {domains.length === 0 && <li className="empty-hint">Keine Domains gelistet.</li>}
           </ul>
+          {knownSources.length > 0 && (
+            <label>
+              Aus bisherigen Downloads
+              <select value="" onChange={(e) => e.target.value && setNewDomain(e.target.value)}>
+                <option value="">Website wählen…</option>
+                {knownSources.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <div className="inline-form">
             <input
               placeholder="z.B. example.com"
