@@ -1,10 +1,12 @@
 import asyncio
 
 from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from starlette.middleware.sessions import SessionMiddleware
 from sqlalchemy.orm import Session
 
+from app.config import STATIC_DIR
 from app.database import SessionLocal, get_db
 from app.models import Item, Performer, RestrictedDomain, Tag
 from app.services.auth import (
@@ -551,3 +553,12 @@ def patch_app_settings(
     if body.auto_remove_completed is not None:
         set_auto_remove_completed(db, body.auto_remove_completed)
     return _app_settings_out(db)
+
+
+# ALLE /api- und /ws-Routen sind oben registriert - Starlette prüft Routen
+# in Registrierungsreihenfolge, darum kann dieser Catch-All-Mount für das
+# gebaute Frontend erst jetzt, ganz am Ende, kommen. Im Dev-Betrieb (kein
+# `npm run build` gelaufen) existiert der Ordner noch nicht - dann einfach
+# nichts mounten, Vites eigener Dev-Server bedient das Frontend per Proxy.
+if STATIC_DIR.is_dir():
+    app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
