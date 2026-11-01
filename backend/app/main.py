@@ -1,14 +1,18 @@
+import asyncio
+
 from fastapi import Depends, FastAPI, HTTPException, Request
 from pydantic import BaseModel
 from starlette.middleware.sessions import SessionMiddleware
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal, get_db
+from app.models import Item
 from app.services.auth import (
     bootstrap_admin_if_needed,
     get_or_create_session_secret,
     verify_login,
 )
+from app.services.download_manager import run_generic_download
 from app.services.settings import (
     DOWNLOADS_SUBPATH_KEY,
     InvalidSubpathError,
@@ -92,3 +96,61 @@ def set_downloads_root(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     set_setting(db, DOWNLOADS_SUBPATH_KEY, clean)
     return DownloadsRootOut(subpath=clean, resolved_path=str(resolve_downloads_root(db)))
+
+
+class LinkIn(BaseModel):
+    url: str
+
+
+class ItemOut(BaseModel):
+    id: int
+    url: str
+    engine: str
+    status: str
+    filename: str | None
+    file_path: str | None
+    bytes_downloaded: int
+    total_bytes: int | None
+    error_message: str | None
+
+    @classmethod
+    def from_item(cls, item: Item) -> "ItemOut":
+        return cls(
+            id=item.id,
+            url=item.url,
+            engine=item.engine,
+            status=item.status,
+            filename=item.filename,
+            file_path=item.file_path,
+            bytes_downloaded=item.bytes_downloaded,
+            total_bytes=item.total_bytes,
+            error_message=item.error_message,
+        )
+
+
+@app.post("/api/links", response_model=ItemOut)
+async def add_link(
+    body: LinkIn, db: Session = Depends(get_db), _: str = Depends(require_login)
+) -> ItemOut:
+    # Die yt-dlp-Erkennung (Stufe 4) entscheidet hier künftig zwischen
+    # Video-Engine und generischem Download. Bis dahin: alles ist 'http'.
+    item = Item(url=body.url, engine="http", status="queued")
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    asyncio.create_task(run_generic_download(item.id))
+    return ItemOut.from_item(item)
+
+
+@app.get("/api/items/{item_id}", response_model=ItemOut)
+def get_item(item_id: int, db: Session = Depends(get_db), _: str = Depends(require_login)) -> ItemOut:
+    item = db.get(Item, item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Nicht gefunden.")
+    return ItemOut.from_item(item)
+
+
+@app.get("/api/items", response_model=list[ItemOut])
+def list_items(db: Session = Depends(get_db), _: str = Depends(require_login)) -> list[ItemOut]:
+    items = db.query(Item).order_by(Item.id).all()
+    return [ItemOut.from_item(item) for item in items]
