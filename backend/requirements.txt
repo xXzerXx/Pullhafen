@@ -7,4 +7,3 @@ yt-dlp==2026.10.26
 bcrypt==5.0.0
 itsdangerous==2.2.0
 python-multipart==0.0.17
-mutagen==1.47.0

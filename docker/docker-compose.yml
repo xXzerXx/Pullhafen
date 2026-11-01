@@ -1,0 +1,21 @@
+services:
+  pullhafen:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      # Nur beim allerersten Start wirksam (siehe app/services/auth.py) -
+      # ein späterer Neustart mit anderen Werten überschreibt ein bereits
+      # gesetztes Passwort NICHT.
+      PULLHAFEN_ADMIN_USERNAME: admin
+      PULLHAFEN_ADMIN_PASSWORD: change-me-on-first-login
+    volumes:
+      - pullhafen_data:/data
+      - pullhafen_downloads:/downloads
+    restart: unless-stopped
+
+volumes:
+  pullhafen_data:
+  pullhafen_downloads:

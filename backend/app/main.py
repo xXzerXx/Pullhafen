@@ -1,4 +1,5 @@
 import asyncio
+from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
@@ -43,7 +44,38 @@ with SessionLocal() as _startup_db:
     bootstrap_admin_if_needed(_startup_db)
     _session_secret = get_or_create_session_secret(_startup_db)
 
-app = FastAPI(title="Pullhafen")
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    # Stufe 13: ein Container-Neustart (hart beendet, mitten im Download)
+    # lässt Items mit status='downloading' in der DB zurück, aber OHNE
+    # laufenden Task (die Task-Registry in download_manager ist In-Process-
+    # Zustand, der den Neustart nicht überlebt). Ohne diese Reconciliation
+    # blieben solche Items für immer auf 'downloading' stehen, ohne dass
+    # irgendwas sie je wieder anfasst. SQLite ist die Quelle der Wahrheit
+    # (siehe Plan) - beim echten Start auf 'paused' setzen (NICHT 'queued' -
+    # run_generic_download erkennt ein Range-Resume nur bei status='paused'
+    # UND vorhandenem file_path, siehe dort) und über dieselbe queue_*-Logik
+    # wie ein manuelles Fortsetzen neu einreihen. Für die http-Engine liest
+    # download_to_directory die tatsächliche Dateigröße auf Platte (nicht
+    # den zuletzt committeten DB-Wert) für den Resume - robust auch gegen
+    # zuletzt ungeschriebene, gepufferte Bytes. Für yt-dlp findet continuedl
+    # die eigene .part-Datei unabhängig vom DB-Status von selbst wieder.
+    with SessionLocal() as db:
+        orphaned = db.query(Item).filter(Item.status == "downloading").all()
+        to_requeue = [(item.id, item.engine) for item in orphaned]
+        for item in orphaned:
+            item.status = "paused"
+        db.commit()
+    for item_id, engine in to_requeue:
+        if engine == "http":
+            dm.queue_generic_download(item_id)
+        else:
+            dm.queue_ytdlp_download(item_id)
+    yield
+
+
+app = FastAPI(title="Pullhafen", lifespan=lifespan)
 app.add_middleware(SessionMiddleware, secret_key=_session_secret, https_only=False)
 
 
