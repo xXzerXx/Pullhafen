@@ -46,7 +46,22 @@ def classify(url: str) -> dict | None:
     Extraktion."""
     if not _matches_specific_extractor(url):
         return None
-    opts = {**_base_opts(), "skip_download": True}
+    opts = {
+        **_base_opts(),
+        "skip_download": True,
+        # Echter Fund: ohne das kann ein einzelner problematischer Link
+        # (z.B. eine von YouTube ratenlimitierte Session bei einem Mix-/
+        # Radio-Link) yt-dlps eigene Retry-Logik viele Minuten lang
+        # beschäftigen, während /api/links auf eine Antwort wartet - ein
+        # Nutzer sieht in der Zeit nur einen ausgegrauten Button ohne jede
+        # Rückmeldung. Das ist hier nur der schnelle Trockenlauf zur
+        # Klassifizierung, nicht der eigentliche Download - darum bewusst
+        # knapp: lieber schnell "fehlgeschlagen" melden als lange hängen.
+        "socket_timeout": 15,
+        "retries": 1,
+        "extractor_retries": 1,
+        "fragment_retries": 1,
+    }
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
             return ydl.extract_info(url, download=False)

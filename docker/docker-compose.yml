@@ -5,6 +5,16 @@ services:
       dockerfile: docker/Dockerfile
     ports:
       - "8000:8000"
+    # Echt notwendig, kein Cargo-Cult: ohne init-Prozess ist der Container-
+    # Start (PID 1) ein einfaches 'sh', das verwaiste Kindprozesse NICHT
+    # reapt. yt-dlps ffmpeg-Postprocessing (Metadaten/Vorschaubild) kann bei
+    # großen Dateien einen Grandchild-Prozess hinterlassen, der die
+    # stdout/stderr-Pipe offen hält - Pythons subprocess.communicate()
+    # wartet dann für immer auf select(), obwohl die eigentliche Arbeit
+    # längst fertig ist (echt reproduziert und mit py-spy nachgewiesen,
+    # siehe Commit-Message). Dockers eingebauter --init/tini behebt genau
+    # das, ohne eine weitere Fremdabhängigkeit ins Image zu bauen.
+    init: true
     environment:
       # Nur beim allerersten Start wirksam (siehe app/services/auth.py) -
       # ein späterer Neustart mit anderen Werten überschreibt ein bereits

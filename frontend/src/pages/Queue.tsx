@@ -27,8 +27,18 @@ export function Queue() {
     setAdding(true)
     setError(null)
     try {
-      await addLink(url.trim())
-      setUrl('')
+      const item = await addLink(url.trim())
+      // Ein erkanntes, aber gescheitertes Video (z.B. "Please sign in" bei
+      // bestimmten YouTube-Mix/Radio-Links) kommt als normale 200-Antwort
+      // mit status='failed' zurück, keine Exception - und 'failed'-Items
+      // tauchen bewusst nicht in der Warteschlange auf (nur Downloads/
+      // Bibliothek). Ohne diesen Hinweis hier sieht es aus wie "nichts
+      // passiert", obwohl der Server den Fehler korrekt gemeldet hat.
+      if (item.status === 'failed') {
+        setError(item.error_message ?? 'Link konnte nicht geladen werden.')
+      } else {
+        setUrl('')
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Link konnte nicht hinzugefügt werden.')
     } finally {
@@ -54,7 +64,7 @@ export function Queue() {
           onChange={(e) => setUrl(e.target.value)}
         />
         <button type="submit" disabled={adding || !url.trim()}>
-          Hinzufügen
+          {adding ? 'Wird geprüft…' : 'Hinzufügen'}
         </button>
       </form>
       {error && <p className="error-text">{error}</p>}

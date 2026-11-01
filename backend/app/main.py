@@ -263,7 +263,26 @@ async def _create_link_item(url: str, db: Session) -> ItemOut:
     # aber Video kaputt -> klar als gescheiterter Video-Download melden
     # (nicht als generischer Download der Fehlerseite durchrutschen lassen).
     try:
-        info = await asyncio.to_thread(ytdlp_engine.classify, url)
+        # classify() hat selbst schon knappe Retry-/Timeout-Werte (siehe
+        # dort) - dieses äußere Limit ist nur das Rückfallnetz, falls yt-dlp
+        # trotzdem mal länger hängt (echt beobachtet: eine von YouTube
+        # ratenlimitierte Session ließ eine einzelne Anfrage >13 Minuten
+        # laufen, mit einem ausgegrauten Button und ohne jede Rückmeldung).
+        info = await asyncio.wait_for(asyncio.to_thread(ytdlp_engine.classify, url), timeout=30)
+    except asyncio.TimeoutError:
+        item = Item(
+            url=url,
+            engine="ytdlp",
+            status="failed",
+            error_message="Zeitüberschreitung beim Prüfen des Links (z.B. durch Ratenlimit der Seite) - bitte später erneut versuchen.",
+        )
+        db.add(item)
+        db.commit()
+        db.refresh(item)
+        domains, threshold = _restricted_context(db)
+        out = ItemOut.from_item(item, domains, threshold)
+        await ws_manager.broadcast({"type": "item_update", "item": out.model_dump()})
+        return out
     except ytdlp_engine.VideoUnavailableError as exc:
         item = Item(url=url, engine="ytdlp", status="failed", error_message=str(exc))
         db.add(item)
