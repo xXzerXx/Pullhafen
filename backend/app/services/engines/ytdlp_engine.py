@@ -83,6 +83,7 @@ def download_sync(
     progress_hook: ProgressHook,
     *,
     force_restart: bool = False,
+    format_selector: str = "bestvideo+bestaudio/best",
 ) -> DownloadResult:
     """Läuft blockierend (via asyncio.to_thread aus dem Aufrufer). Echte
     Metadaten/Vorschaubild-Postprocessors, daher wird ffmpeg gebraucht —
@@ -102,7 +103,7 @@ def download_sync(
     opts = {
         **_base_opts(),
         "outtmpl": outtmpl,
-        "format": "bestvideo+bestaudio/best",
+        "format": format_selector,
         "merge_output_format": "mkv",
         "progress_hooks": [progress_hook],
         "postprocessors": [

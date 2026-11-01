@@ -18,8 +18,16 @@ from app.services.ws_manager import manager as ws_manager
 from app.services.settings import (
     DOWNLOADS_SUBPATH_KEY,
     InvalidSubpathError,
+    get_auto_remove_completed,
+    get_autostart,
+    get_default_quality,
+    get_max_concurrent_downloads,
     get_setting,
     resolve_downloads_root,
+    set_auto_remove_completed,
+    set_autostart,
+    set_default_quality,
+    set_max_concurrent_downloads,
     set_setting,
     validate_downloads_subpath,
 )
@@ -138,6 +146,7 @@ class ItemOut(BaseModel):
     performers: list[str]
     restricted_override: bool | None
     restricted: bool
+    hidden_from_downloads: bool
 
     @classmethod
     def from_item(
@@ -161,6 +170,7 @@ class ItemOut(BaseModel):
             restricted=restricted_service.is_restricted(
                 item, restricted_domains, age_limit_threshold
             ),
+            hidden_from_downloads=item.hidden_from_downloads,
         )
 
 
@@ -191,6 +201,7 @@ async def add_link(
         await ws_manager.broadcast({"type": "item_update", "item": out.model_dump()})
         return out
 
+    autostart = get_autostart(db)
     if info is not None:
         item = Item(
             url=body.url,
@@ -202,13 +213,15 @@ async def add_link(
         db.add(item)
         db.commit()
         db.refresh(item)
-        dm.queue_ytdlp_download(item.id)
+        if autostart:
+            dm.queue_ytdlp_download(item.id)
     else:
         item = Item(url=body.url, engine="http", status="queued")
         db.add(item)
         db.commit()
         db.refresh(item)
-        dm.queue_generic_download(item.id)
+        if autostart:
+            dm.queue_generic_download(item.id)
     domains, threshold = _restricted_context(db)
     out = ItemOut.from_item(item, domains, threshold)
     await ws_manager.broadcast({"type": "item_update", "item": out.model_dump()})
@@ -232,6 +245,7 @@ def list_items(
     performer: str | None = None,
     source: str | None = None,
     restricted: bool | None = None,
+    include_hidden: bool = False,
     db: Session = Depends(get_db),
     _: str = Depends(require_login),
 ) -> list[ItemOut]:
@@ -240,8 +254,13 @@ def list_items(
     einen eigenen Endpunkt zu brauchen (siehe Plan, API-Oberfläche).
     'restricted' wird NICHT in SQL gefiltert - es ist eine reine
     Lesefunktion (siehe app.services.restricted), die hier nach dem Laden
-    angewendet wird."""
+    angewendet wird. include_hidden=False (Standard) ist die Downloads-/
+    Warteschlangen-Sicht - 'aufgeräumte' Items verschwinden daraus. Die
+    Bibliothek übergibt include_hidden=True und ignoriert das Feld damit
+    komplett, wie im Plan beschrieben."""
     query = db.query(Item)
+    if not include_hidden:
+        query = query.filter(Item.hidden_from_downloads == False)  # noqa: E712
     if status is not None:
         query = query.filter(Item.status == status)
     if search:
@@ -359,12 +378,46 @@ async def restart_item(item_id: int, db: Session = Depends(get_db), _: str = Dep
         raise HTTPException(status_code=400, detail="Dieser Status kann nicht neu gestartet werden.")
     if dm.is_active(item.id):
         raise HTTPException(status_code=409, detail="Download läuft gerade - zuerst pausieren.")
+    item.hidden_from_downloads = False
+    db.commit()
     if item.engine == "http":
         dm.queue_generic_download(item.id, restart=True)
     else:
         dm.queue_ytdlp_download(item.id, restart=True)
     domains, threshold = _restricted_context(db)
     return ItemOut.from_item(item, domains, threshold)
+
+
+@app.post("/api/items/{item_id}/start", response_model=ItemOut)
+async def start_item(item_id: int, db: Session = Depends(get_db), _: str = Depends(require_login)) -> ItemOut:
+    """Für Items, die wegen autostart=false noch nie wirklich gestartet
+    wurden (status bleibt 'queued', ohne registrierten Task)."""
+    item = db.get(Item, item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Nicht gefunden.")
+    if item.status != "queued":
+        raise HTTPException(status_code=400, detail="Nur ein wartendes Item kann gestartet werden.")
+    if dm.is_active(item.id):
+        raise HTTPException(status_code=409, detail="Download läuft bereits.")
+    if item.engine == "http":
+        dm.queue_generic_download(item.id)
+    else:
+        dm.queue_ytdlp_download(item.id)
+    domains, threshold = _restricted_context(db)
+    return ItemOut.from_item(item, domains, threshold)
+
+
+@app.post("/api/downloads/cleanup")
+def cleanup_downloads(db: Session = Depends(get_db), _: str = Depends(require_login)) -> dict:
+    """Blendet abgeschlossene Downloads aus dem Downloads-Reiter aus (die
+    Bibliothek bleibt unberührt, siehe Item.hidden_from_downloads)."""
+    count = (
+        db.query(Item)
+        .filter(Item.status == "completed", Item.hidden_from_downloads == False)  # noqa: E712
+        .update({Item.hidden_from_downloads: True})
+    )
+    db.commit()
+    return {"removed": count}
 
 
 class RestrictedOverrideIn(BaseModel):
@@ -445,3 +498,56 @@ def set_restricted_threshold(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return RestrictedThresholdOut(threshold=restricted_service.get_age_limit_threshold(db))
+
+
+class AppSettingsOut(BaseModel):
+    max_concurrent_downloads: int
+    default_quality: str
+    autostart: bool
+    auto_remove_completed: bool
+    downloads_subpath: str
+    resolved_downloads_path: str
+
+
+class AppSettingsIn(BaseModel):
+    max_concurrent_downloads: int | None = None
+    default_quality: str | None = None
+    autostart: bool | None = None
+    auto_remove_completed: bool | None = None
+
+
+def _app_settings_out(db: Session) -> AppSettingsOut:
+    return AppSettingsOut(
+        max_concurrent_downloads=get_max_concurrent_downloads(db),
+        default_quality=get_default_quality(db),
+        autostart=get_autostart(db),
+        auto_remove_completed=get_auto_remove_completed(db),
+        downloads_subpath=get_setting(db, DOWNLOADS_SUBPATH_KEY, ""),
+        resolved_downloads_path=str(resolve_downloads_root(db)),
+    )
+
+
+@app.get("/api/settings", response_model=AppSettingsOut)
+def get_app_settings(db: Session = Depends(get_db), _: str = Depends(require_login)) -> AppSettingsOut:
+    return _app_settings_out(db)
+
+
+@app.patch("/api/settings", response_model=AppSettingsOut)
+def patch_app_settings(
+    body: AppSettingsIn, db: Session = Depends(get_db), _: str = Depends(require_login)
+) -> AppSettingsOut:
+    if body.max_concurrent_downloads is not None:
+        try:
+            set_max_concurrent_downloads(db, body.max_concurrent_downloads)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if body.default_quality is not None:
+        try:
+            set_default_quality(db, body.default_quality)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if body.autostart is not None:
+        set_autostart(db, body.autostart)
+    if body.auto_remove_completed is not None:
+        set_auto_remove_completed(db, body.auto_remove_completed)
+    return _app_settings_out(db)

@@ -2,13 +2,19 @@ import asyncio
 import threading
 from pathlib import Path
 
+from sqlalchemy.orm import Session
 from yt_dlp.utils import DownloadCancelled
 
 from app.database import SessionLocal
 from app.models import Item
 from app.services.engines.http_engine import domain_folder, download_to_directory
 from app.services.engines import ytdlp_engine
-from app.services.settings import resolve_downloads_root
+from app.services.settings import (
+    get_auto_remove_completed,
+    get_default_quality,
+    get_max_concurrent_downloads,
+    resolve_downloads_root,
+)
 from app.services.ws_manager import manager
 
 # Pro aktivem Download: der asyncio.Task selbst (zum Abbrechen bei der
@@ -19,6 +25,32 @@ from app.services.ws_manager import manager
 # DownloadCancelled abbricht.
 _tasks: dict[int, asyncio.Task] = {}
 _ytdlp_cancel_events: dict[int, threading.Event] = {}
+
+
+class _ConcurrencyGate:
+    """Begrenzt, wie viele Downloads GLEICHZEITIG wirklich übertragen
+    (nicht nur in der Warteschlange stehen) - bewusst kein asyncio.Semaphore
+    (dessen Kapazität bei Konstruktion fix ist), weil die Einstellung zur
+    Laufzeit geändert werden kann und sofort für bereits wartende Tasks
+    gelten soll, nicht nur für neu hinzukommende."""
+
+    def __init__(self) -> None:
+        self._active = 0
+        self._cond = asyncio.Condition()
+
+    async def acquire(self, limit: int) -> None:
+        async with self._cond:
+            while self._active >= limit:
+                await self._cond.wait()
+            self._active += 1
+
+    async def release(self) -> None:
+        async with self._cond:
+            self._active -= 1
+            self._cond.notify_all()
+
+
+_gate = _ConcurrencyGate()
 
 
 def _item_snapshot(item: Item) -> dict:
@@ -36,6 +68,7 @@ def _item_snapshot(item: Item) -> dict:
         "age_limit": item.age_limit,
         "tags": sorted(tag.name for tag in item.tags),
         "performers": sorted(performer.name for performer in item.performers),
+        "hidden_from_downloads": item.hidden_from_downloads,
     }
 
 
@@ -72,6 +105,15 @@ def queue_ytdlp_download(item_id: int, *, restart: bool = False) -> None:
     _tasks[item_id] = task
 
 
+def _mark_completed(db: Session, item: Item) -> None:
+    """Gemeinsam für beide Engines: 'completed' setzen und - falls die
+    Einstellung aktiv ist - sofort aus dem Downloads-Reiter ausblenden
+    (die Bibliothek ignoriert dieses Feld, siehe Item.hidden_from_downloads)."""
+    item.status = "completed"
+    if get_auto_remove_completed(db):
+        item.hidden_from_downloads = True
+
+
 async def run_generic_download(item_id: int, *, restart: bool = False) -> None:
     """Läuft als eigene asyncio-Task, mit ihrer eigenen DB-Session (die
     Request-Session ist längst zu, wenn das hier tatsächlich lädt).
@@ -79,8 +121,11 @@ async def run_generic_download(item_id: int, *, restart: bool = False) -> None:
     Entscheidet selbst anhand des Item-Zustands, ob es sich um einen
     Erststart (kein file_path), ein Resume (status='paused' + file_path
     einer bestehenden Teildatei) oder - bei restart=True - einen bewussten
-    Neustart von Null handelt."""
+    Neustart von Null handelt. Wartet VOR dem eigentlichen Transfer auf ein
+    freies Slot im Nebenläufigkeits-Gate - bis dahin bleibt der Status
+    'queued', erst danach wird er auf 'downloading' gesetzt."""
     db = SessionLocal()
+    acquired = False
     try:
         item = db.get(Item, item_id)
         if item is None:
@@ -105,8 +150,13 @@ async def run_generic_download(item_id: int, *, restart: bool = False) -> None:
                 resume_from = candidate.stat().st_size
                 item.bytes_downloaded = resume_from
 
-        item.status = "downloading"
         item.error_message = None
+        db.commit()
+
+        await _gate.acquire(get_max_concurrent_downloads(db))
+        acquired = True
+
+        item.status = "downloading"
         db.commit()
         await _broadcast_item(item)
 
@@ -147,13 +197,15 @@ async def run_generic_download(item_id: int, *, restart: bool = False) -> None:
             await _broadcast_item(item)
             return
 
-        item.status = "completed"
         item.filename = result.filename
         item.file_path = str(result.file_path)
         item.bytes_downloaded = result.bytes_downloaded
+        _mark_completed(db, item)
         db.commit()
         await _broadcast_item(item)
     finally:
+        if acquired:
+            await _gate.release()
         _tasks.pop(item_id, None)
         db.close()
 
@@ -162,6 +214,7 @@ async def run_ytdlp_download(item_id: int, *, restart: bool = False) -> None:
     db = SessionLocal()
     cancel_event = threading.Event()
     _ytdlp_cancel_events[item_id] = cancel_event
+    acquired = False
     try:
         item = db.get(Item, item_id)
         if item is None:
@@ -171,13 +224,19 @@ async def run_ytdlp_download(item_id: int, *, restart: bool = False) -> None:
             item.bytes_downloaded = 0
             item.total_bytes = None
 
-        item.status = "downloading"
         item.error_message = None
+        db.commit()
+
+        await _gate.acquire(get_max_concurrent_downloads(db))
+        acquired = True
+
+        item.status = "downloading"
         db.commit()
         await _broadcast_item(item)
 
         root = resolve_downloads_root(db)
         target_dir = root / (item.source or "Unbekannt")
+        quality = get_default_quality(db)
         loop = asyncio.get_running_loop()
 
         # bestvideo+bestaudio lädt zwei getrennte Formate (Video, dann Audio)
@@ -224,6 +283,7 @@ async def run_ytdlp_download(item_id: int, *, restart: bool = False) -> None:
                 target_dir,
                 progress_hook,
                 force_restart=restart,
+                format_selector=quality,
             )
         except asyncio.CancelledError:
             item.status = "paused"
@@ -242,12 +302,14 @@ async def run_ytdlp_download(item_id: int, *, restart: bool = False) -> None:
             await _broadcast_item(item)
             return
 
-        item.status = "completed"
         item.filename = result.filename
         item.file_path = str(result.file_path)
+        _mark_completed(db, item)
         db.commit()
         await _broadcast_item(item)
     finally:
+        if acquired:
+            await _gate.release()
         _ytdlp_cancel_events.pop(item_id, None)
         _tasks.pop(item_id, None)
         db.close()

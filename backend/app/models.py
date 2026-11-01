@@ -65,6 +65,11 @@ class Item(Base):
     # kein manueller Override, True/False erzwingt eingeschränkt/nicht
     # eingeschränkt unabhängig von Domain-Liste und age_limit.
     restricted_override: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # Getrennt vom echten Lade-Status (siehe Plan, Architektur) - ein
+    # abgeschlossener Download bleibt im Downloads-Reiter sichtbar, bis
+    # "Aufräumen" geklickt wird oder "automatisch entfernen" aktiv ist. Die
+    # Bibliothek ignoriert dieses Feld komplett, nichts verschwindet dort je.
+    hidden_from_downloads: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, nullable=False, default=datetime.datetime.utcnow
     )

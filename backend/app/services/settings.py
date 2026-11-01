@@ -7,6 +7,67 @@ from app.models import Setting
 
 DOWNLOADS_SUBPATH_KEY = "downloads_subpath"
 
+MAX_CONCURRENT_DOWNLOADS_KEY = "max_concurrent_downloads"
+DEFAULT_MAX_CONCURRENT_DOWNLOADS = 3
+
+DEFAULT_QUALITY_KEY = "default_quality"
+DEFAULT_QUALITY_FORMAT = "bestvideo+bestaudio/best"
+
+AUTOSTART_KEY = "autostart"
+DEFAULT_AUTOSTART = True
+
+AUTO_REMOVE_COMPLETED_KEY = "auto_remove_completed"
+DEFAULT_AUTO_REMOVE_COMPLETED = False
+
+
+def _get_bool(db: Session, key: str, default: bool) -> bool:
+    raw = get_setting(db, key, "")
+    if not raw:
+        return default
+    return raw == "true"
+
+
+def _set_bool(db: Session, key: str, value: bool) -> None:
+    set_setting(db, key, "true" if value else "false")
+
+
+def get_max_concurrent_downloads(db: Session) -> int:
+    raw = get_setting(db, MAX_CONCURRENT_DOWNLOADS_KEY, "")
+    return int(raw) if raw else DEFAULT_MAX_CONCURRENT_DOWNLOADS
+
+
+def set_max_concurrent_downloads(db: Session, value: int) -> None:
+    if value < 1:
+        raise ValueError("Es muss mindestens ein gleichzeitiger Download erlaubt sein.")
+    set_setting(db, MAX_CONCURRENT_DOWNLOADS_KEY, str(value))
+
+
+def get_default_quality(db: Session) -> str:
+    return get_setting(db, DEFAULT_QUALITY_KEY, "") or DEFAULT_QUALITY_FORMAT
+
+
+def set_default_quality(db: Session, value: str) -> None:
+    clean = value.strip()
+    if not clean:
+        raise ValueError("Der Qualitäts-Formatstring darf nicht leer sein.")
+    set_setting(db, DEFAULT_QUALITY_KEY, clean)
+
+
+def get_autostart(db: Session) -> bool:
+    return _get_bool(db, AUTOSTART_KEY, DEFAULT_AUTOSTART)
+
+
+def set_autostart(db: Session, value: bool) -> None:
+    _set_bool(db, AUTOSTART_KEY, value)
+
+
+def get_auto_remove_completed(db: Session) -> bool:
+    return _get_bool(db, AUTO_REMOVE_COMPLETED_KEY, DEFAULT_AUTO_REMOVE_COMPLETED)
+
+
+def set_auto_remove_completed(db: Session, value: bool) -> None:
+    _set_bool(db, AUTO_REMOVE_COMPLETED_KEY, value)
+
 
 def get_setting(db: Session, key: str, default: str = "") -> str:
     row = db.get(Setting, key)
