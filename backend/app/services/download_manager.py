@@ -285,7 +285,7 @@ async def run_ytdlp_download(item_id: int, *, restart: bool = False) -> None:
                 target_dir,
                 progress_hook,
                 force_restart=restart,
-                format_selector=quality,
+                quality_preset=quality,
             )
         except asyncio.CancelledError:
             item.status = "paused"

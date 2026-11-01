@@ -11,7 +11,11 @@ MAX_CONCURRENT_DOWNLOADS_KEY = "max_concurrent_downloads"
 DEFAULT_MAX_CONCURRENT_DOWNLOADS = 3
 
 DEFAULT_QUALITY_KEY = "default_quality"
-DEFAULT_QUALITY_FORMAT = "bestvideo+bestaudio/best"
+# Werte sind Preset-Schlüssel (siehe app.services.engines.ytdlp_engine.QUALITY_PRESETS),
+# kein roher yt-dlp-Formatstring mehr - der Server kennt so auch das passende
+# Container-Format (mkv vs. mp4 fürs Safari-kompatible Preset) zum jeweiligen
+# Preset, statt das dem Frontend zu überlassen.
+DEFAULT_QUALITY_PRESET = "best"
 
 AUTOSTART_KEY = "autostart"
 DEFAULT_AUTOSTART = True
@@ -43,14 +47,15 @@ def set_max_concurrent_downloads(db: Session, value: int) -> None:
 
 
 def get_default_quality(db: Session) -> str:
-    return get_setting(db, DEFAULT_QUALITY_KEY, "") or DEFAULT_QUALITY_FORMAT
+    return get_setting(db, DEFAULT_QUALITY_KEY, "") or DEFAULT_QUALITY_PRESET
 
 
 def set_default_quality(db: Session, value: str) -> None:
-    clean = value.strip()
-    if not clean:
-        raise ValueError("Der Qualitäts-Formatstring darf nicht leer sein.")
-    set_setting(db, DEFAULT_QUALITY_KEY, clean)
+    from app.services.engines.ytdlp_engine import QUALITY_PRESETS
+
+    if value not in QUALITY_PRESETS:
+        raise ValueError(f"Unbekanntes Qualitäts-Preset: {value!r}.")
+    set_setting(db, DEFAULT_QUALITY_KEY, value)
 
 
 def get_autostart(db: Session) -> bool:

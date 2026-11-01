@@ -7,39 +7,21 @@ import { VideoPlayer } from '../components/VideoPlayer'
 import { PlayIcon, FolderIcon, DownloadIcon } from '../components/icons'
 import { formatDuration, formatRelative } from '../format'
 import { ToggleSwitch } from '../components/ToggleSwitch'
+import { TagEditor } from '../components/TagEditor'
 
 function LibraryCard({ item, onPlay }: { item: Item; onPlay: (item: Item) => void }) {
   const { reload } = useItems()
-  const [tagsInput, setTagsInput] = useState(item.tags.join(', '))
-  const [performersInput, setPerformersInput] = useState(item.performers.join(', '))
   const [saving, setSaving] = useState(false)
   const [copied, setCopied] = useState(false)
 
-  function parseList(raw: string): string[] {
-    return raw
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean)
+  async function saveTags(next: string[]) {
+    await itemsApi.setTags(item.id, next)
+    await reload()
   }
 
-  async function saveTags() {
-    setSaving(true)
-    try {
-      await itemsApi.setTags(item.id, parseList(tagsInput))
-      await reload()
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function savePerformers() {
-    setSaving(true)
-    try {
-      await itemsApi.setPerformers(item.id, parseList(performersInput))
-      await reload()
-    } finally {
-      setSaving(false)
-    }
+  async function savePerformers(next: string[]) {
+    await itemsApi.setPerformers(item.id, next)
+    await reload()
   }
 
   async function setOverride(value: boolean | null) {
@@ -80,48 +62,14 @@ function LibraryCard({ item, onPlay }: { item: Item; onPlay: (item: Item) => voi
         </div>
 
         <div className="library-card__edit">
-          <label>
-            Tags (kommagetrennt)
-            <input
-              value={tagsInput}
-              onChange={(e) => setTagsInput(e.target.value)}
-              onBlur={saveTags}
-              onKeyDown={(e) => {
-                // Enter ist die naheliegende Erwartung zum Bestätigen - vorher
-                // griff nur onBlur, Enter tat buchstäblich nichts (echter
-                // Fund: Thomas tippte Tags, drückte Enter, nichts wurde
-                // gespeichert). blur() löst onBlur ohnehin aus, kein doppeltes
-                // Speichern.
-                if (e.key === 'Enter') e.currentTarget.blur()
-              }}
-            />
-          </label>
-          <label>
-            Darsteller:innen
-            <input
-              value={performersInput}
-              onChange={(e) => setPerformersInput(e.target.value)}
-              onBlur={savePerformers}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') e.currentTarget.blur()
-              }}
-            />
-          </label>
+          <TagEditor label="Tags" values={item.tags} onChange={saveTags} />
+          <TagEditor
+            label="Darsteller:innen"
+            values={item.performers}
+            chipClassName="chip--performer"
+            onChange={savePerformers}
+          />
         </div>
-        {(item.tags.length > 0 || item.performers.length > 0) && (
-          <div className="library-card__tags">
-            {item.tags.map((t) => (
-              <span key={`tag-${t}`} className="chip">
-                {t}
-              </span>
-            ))}
-            {item.performers.map((p) => (
-              <span key={`performer-${p}`} className="chip chip--performer">
-                {p}
-              </span>
-            ))}
-          </div>
-        )}
 
         <div className="library-card__override">
           <span>Einschränkung:</span>

@@ -6,6 +6,25 @@ from yt_dlp.extractor import gen_extractor_classes
 
 ProgressHook = Callable[[dict], None]
 
+# Qualitäts-Presets: (Formatstring, Merge-Containerformat). "best"/"1080p"/
+# "720p" holen den jeweils bestmöglichen Codec (meist VP9/AV1+Opus in mkv),
+# effizienter aber von Safari (iOS/macOS) nicht nativ abspielbar - siehe
+# echten Fund mit Thomas: dieselbe mkv-Datei lief in Chromium einwandfrei,
+# blieb in Safari schwarz. "compatible" erzwingt stattdessen H.264+AAC in
+# mp4 - etwas weniger effizient codiert, dafür praktisch überall (auch
+# Safari/iOS) nativ abspielbar ohne serverseitiges Transkodieren.
+QUALITY_PRESETS: dict[str, tuple[str, str]] = {
+    "best": ("bestvideo+bestaudio/best", "mkv"),
+    "1080p": ("bestvideo[height<=1080]+bestaudio/best[height<=1080]", "mkv"),
+    "720p": ("bestvideo[height<=720]+bestaudio/best[height<=720]", "mkv"),
+    "audio": ("bestaudio/best", "mkv"),
+    "compatible": (
+        "bestvideo[vcodec^=avc1][ext=mp4]+bestaudio[acodec^=mp4a][ext=m4a]/best[ext=mp4]/best",
+        "mp4",
+    ),
+}
+DEFAULT_QUALITY_PRESET = "best"
+
 
 class VideoUnavailableError(Exception):
     """URL gehört erkennbar zu einer bestimmten Video-Seite, aber die
@@ -109,7 +128,7 @@ def download_sync(
     progress_hook: ProgressHook,
     *,
     force_restart: bool = False,
-    format_selector: str = "bestvideo+bestaudio/best",
+    quality_preset: str = DEFAULT_QUALITY_PRESET,
 ) -> DownloadResult:
     """Läuft blockierend (via asyncio.to_thread aus dem Aufrufer). Echte
     Metadaten/Vorschaubild-Postprocessors, daher wird ffmpeg gebraucht —
@@ -126,11 +145,12 @@ def download_sync(
     outtmpl = str(target_dir / "%(title)s.%(ext)s")
     if force_restart:
         _delete_matching_files(url, target_dir, outtmpl)
+    format_selector, merge_format = QUALITY_PRESETS.get(quality_preset, QUALITY_PRESETS[DEFAULT_QUALITY_PRESET])
     opts = {
         **_base_opts(),
         "outtmpl": outtmpl,
         "format": format_selector,
-        "merge_output_format": "mkv",
+        "merge_output_format": merge_format,
         "progress_hooks": [progress_hook],
         "postprocessors": [
             {"key": "FFmpegMetadata"},

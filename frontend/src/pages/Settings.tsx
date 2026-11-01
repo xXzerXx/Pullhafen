@@ -4,11 +4,17 @@ import type { AppSettings } from '../types'
 import { ToggleSwitch } from '../components/ToggleSwitch'
 import { useItems } from '../ItemsContext'
 
+// Werte sind Preset-Schlüssel, die der Server auflöst (siehe
+// app.services.engines.ytdlp_engine.QUALITY_PRESETS) - nicht mehr der rohe
+// yt-dlp-Formatstring, seit "compatible" dazukam (echter Fund: dieselbe
+// Datei lief in Chromium einwandfrei, blieb in Safari schwarz - VP9/AV1+Opus
+// in mkv spielt Safari nicht nativ ab, H.264+AAC in mp4 dagegen überall).
 const QUALITY_PRESETS = [
-  { label: 'Bestmöglich', value: 'bestvideo+bestaudio/best' },
-  { label: '1080p', value: 'bestvideo[height<=1080]+bestaudio/best[height<=1080]' },
-  { label: '720p', value: 'bestvideo[height<=720]+bestaudio/best[height<=720]' },
-  { label: 'Nur Audio', value: 'bestaudio/best' },
+  { label: 'Bestmöglich (höchste Qualität)', value: 'best' },
+  { label: '1080p', value: '1080p' },
+  { label: '720p', value: '720p' },
+  { label: 'Nur Audio', value: 'audio' },
+  { label: 'Kompatibel (H.264/mp4 - auch für Safari/iOS)', value: 'compatible' },
 ]
 
 const AGE_THRESHOLD_PRESETS = [
@@ -47,6 +53,7 @@ export function Settings() {
   const [tokens, setTokens] = useState<ApiTokenInfo[]>([])
   const [newTokenLabel, setNewTokenLabel] = useState('')
   const [justCreatedToken, setJustCreatedToken] = useState<string | null>(null)
+  const [copiedField, setCopiedField] = useState<'server' | 'token' | null>(null)
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [newPasswordRepeat, setNewPasswordRepeat] = useState('')
@@ -128,6 +135,17 @@ export function Settings() {
   async function removeToken(id: number) {
     await apiTokens.remove(id)
     setTokens(await apiTokens.list())
+  }
+
+  async function copyToClipboard(text: string, field: 'server' | 'token') {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopiedField(field)
+      window.setTimeout(() => setCopiedField(null), 2000)
+    } catch {
+      // Zwischenablage evtl. nicht erlaubt (z.B. kein HTTPS) - Wert bleibt
+      // trotzdem sichtbar zum manuellen Markieren/Kopieren.
+    }
   }
 
   async function handleChangePassword() {
@@ -267,15 +285,41 @@ export function Settings() {
 
       <section>
         <h2>Browser-Extension</h2>
-        <p className="hint">
-          Token für die Extension erzeugen und in deren Optionsseite zusammen mit dieser Server-Adresse
-          eintragen. Der Klartext wird nur einmal angezeigt.
-        </p>
+        <ol className="setup-steps">
+          <li>
+            Erweiterung laden: im Browser unter <code>chrome://extensions</code> (bzw. <code>edge://extensions</code>)
+            den Entwicklermodus einschalten, dann "Entpackte Erweiterung laden" und den Ordner{' '}
+            <code>browser-extension/</code> aus dem Pullhafen-Projekt auswählen.
+          </li>
+          <li>
+            Unten einen Token erzeugen (einmalig sichtbar) und beides kopieren: Server-Adresse und Token.
+          </li>
+          <li>Auf das Erweiterungssymbol rechtsklicken → Optionen, beides dort einfügen, speichern.</li>
+          <li>Fertig: Rechtsklick auf einen Link → "Mit Pullhafen laden", oder Klick aufs Symbol für die aktuelle Seite.</li>
+        </ol>
+
+        <label>
+          Server-Adresse
+          <div className="copy-row">
+            <input readOnly value={window.location.origin} />
+            <button onClick={() => copyToClipboard(window.location.origin, 'server')}>
+              {copiedField === 'server' ? '✓ Kopiert' : 'Kopieren'}
+            </button>
+          </div>
+        </label>
+
         {justCreatedToken && (
-          <p className="hint">
-            Neuer Token (jetzt kopieren, wird nicht nochmal angezeigt): <code>{justCreatedToken}</code>
-          </p>
+          <label>
+            Neuer Token (wird nicht nochmal angezeigt)
+            <div className="copy-row">
+              <input readOnly value={justCreatedToken} />
+              <button onClick={() => copyToClipboard(justCreatedToken, 'token')}>
+                {copiedField === 'token' ? '✓ Kopiert' : 'Kopieren'}
+              </button>
+            </div>
+          </label>
         )}
+
         <ul className="domain-list">
           {tokens.map((t) => (
             <li key={t.id}>
