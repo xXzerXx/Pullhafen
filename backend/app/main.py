@@ -1,6 +1,6 @@
 import asyncio
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 from starlette.middleware.sessions import SessionMiddleware
 from sqlalchemy.orm import Session
@@ -14,6 +14,7 @@ from app.services.auth import (
 )
 from app.services.download_manager import run_generic_download, run_ytdlp_download
 from app.services.engines import ytdlp_engine
+from app.services.ws_manager import manager as ws_manager
 from app.services.settings import (
     DOWNLOADS_SUBPATH_KEY,
     InvalidSubpathError,
@@ -68,6 +69,23 @@ def logout(request: Request) -> dict:
 @app.get("/api/auth/me")
 def me(username: str = Depends(require_login)) -> dict:
     return {"username": username}
+
+
+@app.websocket("/ws")
+async def ws_endpoint(websocket: WebSocket) -> None:
+    # SessionMiddleware liest das Session-Cookie auch beim WebSocket-
+    # Handshake aus (gleicher Ablauf wie bei HTTP-Requests).
+    if not websocket.session.get("username"):
+        await websocket.close(code=1008)
+        return
+    await ws_manager.connect(websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        pass
+    finally:
+        await ws_manager.disconnect(websocket)
 
 
 class DownloadsRootOut(BaseModel):
@@ -148,6 +166,7 @@ async def add_link(
         db.add(item)
         db.commit()
         db.refresh(item)
+        await ws_manager.broadcast({"type": "item_update", "item": ItemOut.from_item(item).model_dump()})
         return ItemOut.from_item(item)
 
     if info is not None:
@@ -168,6 +187,7 @@ async def add_link(
         db.commit()
         db.refresh(item)
         asyncio.create_task(run_generic_download(item.id))
+    await ws_manager.broadcast({"type": "item_update", "item": ItemOut.from_item(item).model_dump()})
     return ItemOut.from_item(item)
 
 
