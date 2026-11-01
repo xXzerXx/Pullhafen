@@ -60,14 +60,48 @@ class DownloadResult:
         self.filename = filename
 
 
-def download_sync(url: str, target_dir: Path, progress_hook: ProgressHook) -> DownloadResult:
+def _delete_matching_files(url: str, target_dir: Path, outtmpl: str) -> None:
+    """Für einen echten Restart: findet per Trockenlauf-Extraktion den
+    Dateistamm, den yt-dlp für diese URL verwenden würde, und löscht alles
+    mit diesem Stamm (fertige Datei, .part/.ytdl-Reste, Vorschaubild) -
+    sonst würde `continuedl: False` zwar ein Resume verhindern, die alten
+    Bytes aber trotzdem liegen lassen bzw. yt-dlp verwirren."""
+    probe_opts = {**_base_opts(), "outtmpl": outtmpl, "skip_download": True}
+    try:
+        with yt_dlp.YoutubeDL(probe_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            stem = Path(ydl.prepare_filename(info)).stem
+    except Exception:  # noqa: BLE001 — Trockenlauf-Fehler blockt den Restart-Versuch nicht
+        return
+    for candidate in target_dir.glob(f"{stem}.*"):
+        candidate.unlink(missing_ok=True)
+
+
+def download_sync(
+    url: str,
+    target_dir: Path,
+    progress_hook: ProgressHook,
+    *,
+    force_restart: bool = False,
+) -> DownloadResult:
     """Läuft blockierend (via asyncio.to_thread aus dem Aufrufer). Echte
     Metadaten/Vorschaubild-Postprocessors, daher wird ffmpeg gebraucht —
-    im Docker-Image (siehe Plan) immer vorhanden."""
+    im Docker-Image (siehe Plan) immer vorhanden.
+
+    Pause (Stufe 6) läuft NICHT über Task-Cancellation (der eigentliche
+    Download läuft in einem Worker-Thread, den asyncio nicht stoppen kann) —
+    stattdessen wirft `progress_hook` selbst `yt_dlp.utils.DownloadCancelled`,
+    was yt-dlp als sauberen Abbruch behandelt und die bereits geschriebene
+    `.part`-Datei stehen lässt. Resume ist dann einfach derselbe Aufruf noch
+    einmal - yt-dlps eigenes `continuedl` (Default: an) findet die `.part`-
+    Datei über denselben `outtmpl`-Pfad automatisch wieder."""
     target_dir.mkdir(parents=True, exist_ok=True)
+    outtmpl = str(target_dir / "%(title)s.%(ext)s")
+    if force_restart:
+        _delete_matching_files(url, target_dir, outtmpl)
     opts = {
         **_base_opts(),
-        "outtmpl": str(target_dir / "%(title)s.%(ext)s"),
+        "outtmpl": outtmpl,
         "format": "bestvideo+bestaudio/best",
         "merge_output_format": "mkv",
         "progress_hooks": [progress_hook],
@@ -77,6 +111,9 @@ def download_sync(url: str, target_dir: Path, progress_hook: ProgressHook) -> Do
         ],
         "writethumbnail": True,
     }
+    if force_restart:
+        opts["continuedl"] = False
+        opts["overwrites"] = True
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=True)
     # info['requested_downloads'][0]['filepath'] ist der echte Endpfad NACH

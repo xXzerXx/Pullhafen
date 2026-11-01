@@ -6,6 +6,7 @@ from urllib.parse import urlsplit
 import httpx
 
 ProgressCallback = Callable[[int, int | None], Awaitable[None]]
+OnStartCallback = Callable[[Path, int | None], Awaitable[None]]
 
 CHUNK_SIZE = 65536
 
@@ -54,17 +55,19 @@ async def download_to_directory(
     *,
     dest_path: Path | None = None,
     resume_from: int = 0,
+    on_start: OnStartCallback | None = None,
     progress_cb: ProgressCallback | None = None,
 ) -> DownloadResult:
     """Lädt `url` komplett herunter. Ohne `dest_path` wird ein neuer,
     kollisionsfreier Dateiname in `directory` gewählt (erster Download).
-    Mit `dest_path` + `resume_from` > 0 wird eine bestehende Teildatei per
-    Range-Header fortgesetzt (Pause/Resume, Stufe 6)."""
+    Mit `dest_path` + `resume_from` > 0 wird versucht, eine bestehende
+    Teildatei per Range-Header fortzusetzen (Pause/Resume, Stufe 6) — ignoriert
+    der Server den Range-Header (kein 206), wird stattdessen ehrlich von
+    Null neu geschrieben, statt den vollen Inhalt an die Teildatei
+    anzuhängen und sie zu korrumpieren."""
     headers = {}
-    mode = "wb"
     if resume_from > 0 and dest_path is not None:
         headers["Range"] = f"bytes={resume_from}-"
-        mode = "ab"
 
     async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
         async with client.stream("GET", url, headers=headers) as response:
@@ -72,13 +75,28 @@ async def download_to_directory(
             if dest_path is None:
                 filename = filename_from_response(url, response)
                 dest_path = unique_destination(directory, filename)
+                # unique_destination kann wegen einer Namenskollision
+                # umbenennen (z.B. "datei (1).bin") - der zurückgegebene
+                # filename muss den ECHTEN Dateinamen auf Platte spiegeln,
+                # nicht den ursprünglich gewünschten.
+                filename = dest_path.name
             else:
                 filename = dest_path.name
 
-            content_length = response.headers.get("content-length")
-            total_bytes = int(content_length) + resume_from if content_length else None
+            resumed = resume_from > 0 and response.status_code == 206
+            actual_resume_from = resume_from if resumed else 0
+            mode = "ab" if resumed else "wb"
 
-            downloaded = resume_from
+            content_length = response.headers.get("content-length")
+            if content_length:
+                total_bytes = int(content_length) + actual_resume_from
+            else:
+                total_bytes = None
+
+            if on_start is not None:
+                await on_start(dest_path, total_bytes)
+
+            downloaded = actual_resume_from
             dest_path.parent.mkdir(parents=True, exist_ok=True)
             with open(dest_path, mode) as f:
                 async for chunk in response.aiter_bytes(CHUNK_SIZE):

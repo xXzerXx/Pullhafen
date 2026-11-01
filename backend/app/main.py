@@ -12,7 +12,7 @@ from app.services.auth import (
     get_or_create_session_secret,
     verify_login,
 )
-from app.services.download_manager import run_generic_download, run_ytdlp_download
+from app.services import download_manager as dm
 from app.services.engines import ytdlp_engine
 from app.services.ws_manager import manager as ws_manager
 from app.services.settings import (
@@ -180,13 +180,13 @@ async def add_link(
         db.add(item)
         db.commit()
         db.refresh(item)
-        asyncio.create_task(run_ytdlp_download(item.id))
+        dm.queue_ytdlp_download(item.id)
     else:
         item = Item(url=body.url, engine="http", status="queued")
         db.add(item)
         db.commit()
         db.refresh(item)
-        asyncio.create_task(run_generic_download(item.id))
+        dm.queue_generic_download(item.id)
     await ws_manager.broadcast({"type": "item_update", "item": ItemOut.from_item(item).model_dump()})
     return ItemOut.from_item(item)
 
@@ -203,3 +203,47 @@ def get_item(item_id: int, db: Session = Depends(get_db), _: str = Depends(requi
 def list_items(db: Session = Depends(get_db), _: str = Depends(require_login)) -> list[ItemOut]:
     items = db.query(Item).order_by(Item.id).all()
     return [ItemOut.from_item(item) for item in items]
+
+
+@app.post("/api/items/{item_id}/pause", response_model=ItemOut)
+async def pause_item(item_id: int, db: Session = Depends(get_db), _: str = Depends(require_login)) -> ItemOut:
+    item = db.get(Item, item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Nicht gefunden.")
+    if item.status not in ("downloading", "queued"):
+        raise HTTPException(status_code=400, detail="Nur ein laufender Download kann pausiert werden.")
+    if not dm.pause_item(item.id):
+        raise HTTPException(status_code=409, detail="Download läuft gerade nicht aktiv.")
+    return ItemOut.from_item(item)
+
+
+@app.post("/api/items/{item_id}/resume", response_model=ItemOut)
+async def resume_item(item_id: int, db: Session = Depends(get_db), _: str = Depends(require_login)) -> ItemOut:
+    item = db.get(Item, item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Nicht gefunden.")
+    if item.status != "paused":
+        raise HTTPException(status_code=400, detail="Nur ein pausierter Download kann fortgesetzt werden.")
+    if dm.is_active(item.id):
+        raise HTTPException(status_code=409, detail="Download läuft bereits.")
+    if item.engine == "http":
+        dm.queue_generic_download(item.id)
+    else:
+        dm.queue_ytdlp_download(item.id)
+    return ItemOut.from_item(item)
+
+
+@app.post("/api/items/{item_id}/restart", response_model=ItemOut)
+async def restart_item(item_id: int, db: Session = Depends(get_db), _: str = Depends(require_login)) -> ItemOut:
+    item = db.get(Item, item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Nicht gefunden.")
+    if item.status not in ("paused", "failed", "completed"):
+        raise HTTPException(status_code=400, detail="Dieser Status kann nicht neu gestartet werden.")
+    if dm.is_active(item.id):
+        raise HTTPException(status_code=409, detail="Download läuft gerade - zuerst pausieren.")
+    if item.engine == "http":
+        dm.queue_generic_download(item.id, restart=True)
+    else:
+        dm.queue_ytdlp_download(item.id, restart=True)
+    return ItemOut.from_item(item)
