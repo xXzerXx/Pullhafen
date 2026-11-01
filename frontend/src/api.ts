@@ -118,3 +118,19 @@ export const settings = {
       body: JSON.stringify({ threshold }),
     }),
 }
+
+export interface ApiTokenInfo {
+  id: number
+  label: string
+  created_at: string
+}
+
+export const apiTokens = {
+  list: () => request<ApiTokenInfo[]>('/api/settings/api-tokens'),
+  create: (label: string) =>
+    request<ApiTokenInfo & { token: string }>('/api/settings/api-tokens', {
+      method: 'POST',
+      body: JSON.stringify({ label }),
+    }),
+  remove: (id: number) => request<{ status: string }>(`/api/settings/api-tokens/${id}`, { method: 'DELETE' }),
+}

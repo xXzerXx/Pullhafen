@@ -107,3 +107,20 @@ class RestrictedDomain(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     domain: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+
+
+class ApiToken(Base):
+    """Bearer-Token für die Browser-Extension (Stufe 12) - bewusst getrennt
+    vom Session-Cookie-Login, da eine Extension keine Browser-Session hat.
+    Gespeichert wird nur der SHA-256-Hash, der Klartext-Token wird einmalig
+    bei der Erstellung zurückgegeben und danach nie wieder (gleiches Prinzip
+    wie ein GitHub Personal Access Token)."""
+
+    __tablename__ = "api_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    label: Mapped[str] = mapped_column(String, nullable=False)
+    token_hash: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, default=datetime.datetime.utcnow
+    )

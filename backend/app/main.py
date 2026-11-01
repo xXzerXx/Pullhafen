@@ -1,6 +1,6 @@
 import asyncio
 
-from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from starlette.middleware.sessions import SessionMiddleware
@@ -8,7 +8,8 @@ from sqlalchemy.orm import Session
 
 from app.config import STATIC_DIR
 from app.database import SessionLocal, get_db
-from app.models import Item, Performer, RestrictedDomain, Tag
+from app.models import ApiToken, Item, Performer, RestrictedDomain, Tag
+from app.services import api_tokens as api_tokens_service
 from app.services.auth import (
     bootstrap_admin_if_needed,
     get_or_create_session_secret,
@@ -51,6 +52,20 @@ def require_login(request: Request) -> str:
     if not username:
         raise HTTPException(status_code=401, detail="Nicht angemeldet.")
     return username
+
+
+def require_api_token(
+    authorization: str | None = Header(default=None), db: Session = Depends(get_db)
+) -> ApiToken:
+    """Separater Auth-Pfad für die Browser-Extension (Stufe 12) - die hat
+    keine Browser-Session, darum Bearer-Token statt Session-Cookie."""
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Fehlender oder ungültiger Authorization-Header.")
+    raw_token = authorization.removeprefix("Bearer ").strip()
+    token = api_tokens_service.verify_token(db, raw_token)
+    if token is None:
+        raise HTTPException(status_code=401, detail="Ungültiger Token.")
+    return token
 
 
 @app.get("/health")
@@ -183,18 +198,19 @@ def _restricted_context(db: Session) -> tuple[set[str], int]:
     )
 
 
-@app.post("/api/links", response_model=ItemOut)
-async def add_link(
-    body: LinkIn, db: Session = Depends(get_db), _: str = Depends(require_login)
-) -> ItemOut:
+async def _create_link_item(url: str, db: Session) -> ItemOut:
+    """Gemeinsame Logik für /api/links (Session-Auth) und
+    /api/extension/links (Bearer-Token) - derselbe Trockenlauf, dieselbe
+    Engine-Entscheidung, derselbe WS-Broadcast, nur der Auth-Pfad
+    unterscheidet sich zwischen den beiden Endpunkten."""
     # Echter yt-dlp-Trockenlauf entscheidet: erkanntes Video -> ytdlp-Engine,
     # keine Seite zuständig -> generischer httpx-Download, bekannte Seite
     # aber Video kaputt -> klar als gescheiterter Video-Download melden
     # (nicht als generischer Download der Fehlerseite durchrutschen lassen).
     try:
-        info = await asyncio.to_thread(ytdlp_engine.classify, body.url)
+        info = await asyncio.to_thread(ytdlp_engine.classify, url)
     except ytdlp_engine.VideoUnavailableError as exc:
-        item = Item(url=body.url, engine="ytdlp", status="failed", error_message=str(exc))
+        item = Item(url=url, engine="ytdlp", status="failed", error_message=str(exc))
         db.add(item)
         db.commit()
         db.refresh(item)
@@ -206,7 +222,7 @@ async def add_link(
     autostart = get_autostart(db)
     if info is not None:
         item = Item(
-            url=body.url,
+            url=url,
             engine="ytdlp",
             status="queued",
             source=info.get("extractor_key"),
@@ -218,7 +234,7 @@ async def add_link(
         if autostart:
             dm.queue_ytdlp_download(item.id)
     else:
-        item = Item(url=body.url, engine="http", status="queued")
+        item = Item(url=url, engine="http", status="queued")
         db.add(item)
         db.commit()
         db.refresh(item)
@@ -228,6 +244,20 @@ async def add_link(
     out = ItemOut.from_item(item, domains, threshold)
     await ws_manager.broadcast({"type": "item_update", "item": out.model_dump()})
     return out
+
+
+@app.post("/api/links", response_model=ItemOut)
+async def add_link(
+    body: LinkIn, db: Session = Depends(get_db), _: str = Depends(require_login)
+) -> ItemOut:
+    return await _create_link_item(body.url, db)
+
+
+@app.post("/api/extension/links", response_model=ItemOut)
+async def add_extension_link(
+    body: LinkIn, db: Session = Depends(get_db), _: ApiToken = Depends(require_api_token)
+) -> ItemOut:
+    return await _create_link_item(body.url, db)
 
 
 @app.get("/api/items/{item_id}", response_model=ItemOut)
@@ -553,6 +583,43 @@ def patch_app_settings(
     if body.auto_remove_completed is not None:
         set_auto_remove_completed(db, body.auto_remove_completed)
     return _app_settings_out(db)
+
+
+class ApiTokenOut(BaseModel):
+    id: int
+    label: str
+    created_at: str
+
+
+class ApiTokenCreateOut(ApiTokenOut):
+    token: str
+
+
+class ApiTokenIn(BaseModel):
+    label: str
+
+
+@app.get("/api/settings/api-tokens", response_model=list[ApiTokenOut])
+def list_api_tokens(db: Session = Depends(get_db), _: str = Depends(require_login)) -> list[ApiTokenOut]:
+    tokens = db.query(ApiToken).order_by(ApiToken.id).all()
+    return [ApiTokenOut(id=t.id, label=t.label, created_at=t.created_at.isoformat()) for t in tokens]
+
+
+@app.post("/api/settings/api-tokens", response_model=ApiTokenCreateOut)
+def create_api_token(
+    body: ApiTokenIn, db: Session = Depends(get_db), _: str = Depends(require_login)
+) -> ApiTokenCreateOut:
+    token, raw_token = api_tokens_service.create_token(db, body.label)
+    return ApiTokenCreateOut(id=token.id, label=token.label, created_at=token.created_at.isoformat(), token=raw_token)
+
+
+@app.delete("/api/settings/api-tokens/{token_id}")
+def delete_api_token(
+    token_id: int, db: Session = Depends(get_db), _: str = Depends(require_login)
+) -> dict:
+    if not api_tokens_service.delete_token(db, token_id):
+        raise HTTPException(status_code=404, detail="Nicht gefunden.")
+    return {"status": "ok"}
 
 
 # ALLE /api- und /ws-Routen sind oben registriert - Starlette prüft Routen

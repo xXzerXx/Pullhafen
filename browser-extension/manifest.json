@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "Pullhafen",
+  "version": "1.0.0",
+  "description": "Links per Rechtsklick oder Symbolleisten-Button direkt an den eigenen Pullhafen-Downloadmanager senden.",
+  "permissions": ["contextMenus", "storage", "activeTab"],
+  "optional_host_permissions": ["http://*/*", "https://*/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Aktuelle Seite an Pullhafen senden"
+  },
+  "options_page": "options.html"
+}

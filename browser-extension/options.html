@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Pullhafen – Einstellungen</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        background: #12161c;
+        color: #e4e8ee;
+        max-width: 420px;
+        margin: 40px auto;
+        padding: 0 16px;
+      }
+      h1 {
+        font-size: 1.1rem;
+      }
+      label {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        margin-bottom: 14px;
+        font-size: 0.85rem;
+        color: #8c98a8;
+      }
+      input {
+        font: inherit;
+        background: #1a2029;
+        color: #e4e8ee;
+        border: 1px solid #2c3542;
+        border-radius: 6px;
+        padding: 8px 10px;
+      }
+      button {
+        font: inherit;
+        background: #222a35;
+        color: #e4e8ee;
+        border: 1px solid #2c3542;
+        border-radius: 6px;
+        padding: 8px 14px;
+        cursor: pointer;
+      }
+      #status {
+        margin-top: 12px;
+        font-size: 0.85rem;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Pullhafen – Verbindung</h1>
+    <label>
+      Server-Adresse
+      <input id="backendUrl" placeholder="http://192.168.1.50:8000" />
+    </label>
+    <label>
+      Token
+      <input id="token" placeholder="pullhafen_…" />
+    </label>
+    <button id="save">Speichern</button>
+    <p id="status"></p>
+    <script src="options.js"></script>
+  </body>
+</html>

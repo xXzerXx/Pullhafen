@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ApiError, settings as settingsApi } from '../api'
+import { ApiError, apiTokens, type ApiTokenInfo, settings as settingsApi } from '../api'
 import type { AppSettings } from '../types'
 
 export function Settings() {
@@ -8,16 +8,21 @@ export function Settings() {
   const [threshold, setThreshold] = useState(18)
   const [domains, setDomains] = useState<string[]>([])
   const [newDomain, setNewDomain] = useState('')
+  const [tokens, setTokens] = useState<ApiTokenInfo[]>([])
+  const [newTokenLabel, setNewTokenLabel] = useState('')
+  const [justCreatedToken, setJustCreatedToken] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
   async function loadAll() {
-    const [s, t, d] = await Promise.all([
+    const [s, t, d, tok] = await Promise.all([
       settingsApi.get(),
       settingsApi.getRestrictedThreshold(),
       settingsApi.listRestrictedDomains(),
+      apiTokens.list(),
     ])
     setSettings(s)
+    setTokens(tok)
     setDownloadsSubpathInput(s.downloads_subpath)
     setThreshold(t.threshold)
     setDomains(d)
@@ -68,6 +73,19 @@ export function Settings() {
   async function removeDomain(domain: string) {
     const updated = await settingsApi.removeRestrictedDomain(domain)
     setDomains(updated)
+  }
+
+  async function createToken() {
+    if (!newTokenLabel.trim()) return
+    const created = await apiTokens.create(newTokenLabel.trim())
+    setJustCreatedToken(created.token)
+    setNewTokenLabel('')
+    setTokens(await apiTokens.list())
+  }
+
+  async function removeToken(id: number) {
+    await apiTokens.remove(id)
+    setTokens(await apiTokens.list())
   }
 
   if (loading || !settings) return <div className="page">Lädt…</div>
@@ -158,6 +176,37 @@ export function Settings() {
               Hinzufügen
             </button>
           </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Browser-Extension</h2>
+        <p className="hint">
+          Token für die Extension erzeugen und in deren Optionsseite zusammen mit dieser Server-Adresse
+          eintragen. Der Klartext wird nur einmal angezeigt.
+        </p>
+        {justCreatedToken && (
+          <p className="hint">
+            Neuer Token (jetzt kopieren, wird nicht nochmal angezeigt): <code>{justCreatedToken}</code>
+          </p>
+        )}
+        <ul className="domain-list">
+          {tokens.map((t) => (
+            <li key={t.id}>
+              {t.label} <button onClick={() => removeToken(t.id)}>Entfernen</button>
+            </li>
+          ))}
+          {tokens.length === 0 && <li className="empty-hint">Noch kein Token erzeugt.</li>}
+        </ul>
+        <div className="add-link-form">
+          <input
+            placeholder="Bezeichnung, z.B. 'Firefox am Laptop'"
+            value={newTokenLabel}
+            onChange={(e) => setNewTokenLabel(e.target.value)}
+          />
+          <button onClick={createToken} disabled={!newTokenLabel.trim()}>
+            Token erzeugen
+          </button>
         </div>
       </section>
     </div>
