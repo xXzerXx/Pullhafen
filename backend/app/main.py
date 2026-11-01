@@ -6,7 +6,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal, get_db
-from app.models import Item, Performer, Tag
+from app.models import Item, Performer, RestrictedDomain, Tag
 from app.services.auth import (
     bootstrap_admin_if_needed,
     get_or_create_session_secret,
@@ -23,6 +23,7 @@ from app.services.settings import (
     set_setting,
     validate_downloads_subpath,
 )
+from app.services import restricted as restricted_service
 
 # Admin-Konto bootstrapen und das Session-Secret aus der DB holen (oder beim
 # allerersten Start erzeugen), BEVOR die SessionMiddleware registriert wird —
@@ -135,9 +136,13 @@ class ItemOut(BaseModel):
     age_limit: int
     tags: list[str]
     performers: list[str]
+    restricted_override: bool | None
+    restricted: bool
 
     @classmethod
-    def from_item(cls, item: Item) -> "ItemOut":
+    def from_item(
+        cls, item: Item, restricted_domains: set[str], age_limit_threshold: int
+    ) -> "ItemOut":
         return cls(
             id=item.id,
             url=item.url,
@@ -152,7 +157,18 @@ class ItemOut(BaseModel):
             age_limit=item.age_limit,
             tags=sorted(tag.name for tag in item.tags),
             performers=sorted(performer.name for performer in item.performers),
+            restricted_override=item.restricted_override,
+            restricted=restricted_service.is_restricted(
+                item, restricted_domains, age_limit_threshold
+            ),
         )
+
+
+def _restricted_context(db: Session) -> tuple[set[str], int]:
+    return (
+        restricted_service.restricted_domains_set(db),
+        restricted_service.get_age_limit_threshold(db),
+    )
 
 
 @app.post("/api/links", response_model=ItemOut)
@@ -170,8 +186,10 @@ async def add_link(
         db.add(item)
         db.commit()
         db.refresh(item)
-        await ws_manager.broadcast({"type": "item_update", "item": ItemOut.from_item(item).model_dump()})
-        return ItemOut.from_item(item)
+        domains, threshold = _restricted_context(db)
+        out = ItemOut.from_item(item, domains, threshold)
+        await ws_manager.broadcast({"type": "item_update", "item": out.model_dump()})
+        return out
 
     if info is not None:
         item = Item(
@@ -191,8 +209,10 @@ async def add_link(
         db.commit()
         db.refresh(item)
         dm.queue_generic_download(item.id)
-    await ws_manager.broadcast({"type": "item_update", "item": ItemOut.from_item(item).model_dump()})
-    return ItemOut.from_item(item)
+    domains, threshold = _restricted_context(db)
+    out = ItemOut.from_item(item, domains, threshold)
+    await ws_manager.broadcast({"type": "item_update", "item": out.model_dump()})
+    return out
 
 
 @app.get("/api/items/{item_id}", response_model=ItemOut)
@@ -200,7 +220,8 @@ def get_item(item_id: int, db: Session = Depends(get_db), _: str = Depends(requi
     item = db.get(Item, item_id)
     if item is None:
         raise HTTPException(status_code=404, detail="Nicht gefunden.")
-    return ItemOut.from_item(item)
+    domains, threshold = _restricted_context(db)
+    return ItemOut.from_item(item, domains, threshold)
 
 
 @app.get("/api/items", response_model=list[ItemOut])
@@ -210,12 +231,16 @@ def list_items(
     tag: str | None = None,
     performer: str | None = None,
     source: str | None = None,
+    restricted: bool | None = None,
     db: Session = Depends(get_db),
     _: str = Depends(require_login),
 ) -> list[ItemOut]:
     """EIN Endpunkt bedient alle Inhalts-Reiter (Warteschlange/Downloads/
     Bibliothek) über Status- und Facettenfilter, statt für jeden Reiter
-    einen eigenen Endpunkt zu brauchen (siehe Plan, API-Oberfläche)."""
+    einen eigenen Endpunkt zu brauchen (siehe Plan, API-Oberfläche).
+    'restricted' wird NICHT in SQL gefiltert - es ist eine reine
+    Lesefunktion (siehe app.services.restricted), die hier nach dem Laden
+    angewendet wird."""
     query = db.query(Item)
     if status is not None:
         query = query.filter(Item.status == status)
@@ -229,7 +254,11 @@ def list_items(
     if source is not None:
         query = query.filter(Item.source == source)
     items = query.order_by(Item.id).all()
-    return [ItemOut.from_item(item) for item in items]
+    domains, threshold = _restricted_context(db)
+    out = [ItemOut.from_item(item, domains, threshold) for item in items]
+    if restricted is not None:
+        out = [o for o in out if o.restricted == restricted]
+    return out
 
 
 class TagsIn(BaseModel):
@@ -262,7 +291,8 @@ def set_item_tags(
     item.tags = [_get_or_create(db, Tag, name) for name in sorted(names)]
     db.commit()
     db.refresh(item)
-    return ItemOut.from_item(item)
+    domains, threshold = _restricted_context(db)
+    return ItemOut.from_item(item, domains, threshold)
 
 
 @app.put("/api/items/{item_id}/performers", response_model=ItemOut)
@@ -276,7 +306,8 @@ def set_item_performers(
     item.performers = [_get_or_create(db, Performer, name) for name in sorted(names)]
     db.commit()
     db.refresh(item)
-    return ItemOut.from_item(item)
+    domains, threshold = _restricted_context(db)
+    return ItemOut.from_item(item, domains, threshold)
 
 
 @app.get("/api/tags", response_model=list[str])
@@ -298,7 +329,8 @@ async def pause_item(item_id: int, db: Session = Depends(get_db), _: str = Depen
         raise HTTPException(status_code=400, detail="Nur ein laufender Download kann pausiert werden.")
     if not dm.pause_item(item.id):
         raise HTTPException(status_code=409, detail="Download läuft gerade nicht aktiv.")
-    return ItemOut.from_item(item)
+    domains, threshold = _restricted_context(db)
+    return ItemOut.from_item(item, domains, threshold)
 
 
 @app.post("/api/items/{item_id}/resume", response_model=ItemOut)
@@ -314,7 +346,8 @@ async def resume_item(item_id: int, db: Session = Depends(get_db), _: str = Depe
         dm.queue_generic_download(item.id)
     else:
         dm.queue_ytdlp_download(item.id)
-    return ItemOut.from_item(item)
+    domains, threshold = _restricted_context(db)
+    return ItemOut.from_item(item, domains, threshold)
 
 
 @app.post("/api/items/{item_id}/restart", response_model=ItemOut)
@@ -330,4 +363,85 @@ async def restart_item(item_id: int, db: Session = Depends(get_db), _: str = Dep
         dm.queue_generic_download(item.id, restart=True)
     else:
         dm.queue_ytdlp_download(item.id, restart=True)
-    return ItemOut.from_item(item)
+    domains, threshold = _restricted_context(db)
+    return ItemOut.from_item(item, domains, threshold)
+
+
+class RestrictedOverrideIn(BaseModel):
+    override: bool | None
+
+
+@app.patch("/api/items/{item_id}/restricted-override", response_model=ItemOut)
+def set_restricted_override(
+    item_id: int,
+    body: RestrictedOverrideIn,
+    db: Session = Depends(get_db),
+    _: str = Depends(require_login),
+) -> ItemOut:
+    """Ebene 1 der Einschränkungs-Logik. override=None löscht den manuellen
+    Override wieder (dann entscheiden Domain-Liste/age_limit)."""
+    item = db.get(Item, item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Nicht gefunden.")
+    item.restricted_override = body.override
+    db.commit()
+    db.refresh(item)
+    domains, threshold = _restricted_context(db)
+    return ItemOut.from_item(item, domains, threshold)
+
+
+class RestrictedDomainIn(BaseModel):
+    domain: str
+
+
+@app.get("/api/settings/restricted-domains", response_model=list[str])
+def list_restricted_domains(db: Session = Depends(get_db), _: str = Depends(require_login)) -> list[str]:
+    return sorted(restricted_service.restricted_domains_set(db))
+
+
+@app.post("/api/settings/restricted-domains", response_model=list[str])
+def add_restricted_domain(
+    body: RestrictedDomainIn, db: Session = Depends(get_db), _: str = Depends(require_login)
+) -> list[str]:
+    clean = restricted_service.domain_of(f"//{body.domain.strip()}") or body.domain.strip().lower()
+    if not clean:
+        raise HTTPException(status_code=400, detail="Leere Domain.")
+    if db.query(RestrictedDomain).filter(RestrictedDomain.domain == clean).first() is None:
+        db.add(RestrictedDomain(domain=clean))
+        db.commit()
+    return sorted(restricted_service.restricted_domains_set(db))
+
+
+@app.delete("/api/settings/restricted-domains/{domain}", response_model=list[str])
+def remove_restricted_domain(
+    domain: str, db: Session = Depends(get_db), _: str = Depends(require_login)
+) -> list[str]:
+    db.query(RestrictedDomain).filter(RestrictedDomain.domain == domain.lower()).delete()
+    db.commit()
+    return sorted(restricted_service.restricted_domains_set(db))
+
+
+class RestrictedThresholdOut(BaseModel):
+    threshold: int
+
+
+class RestrictedThresholdIn(BaseModel):
+    threshold: int
+
+
+@app.get("/api/settings/restricted-threshold", response_model=RestrictedThresholdOut)
+def get_restricted_threshold(
+    db: Session = Depends(get_db), _: str = Depends(require_login)
+) -> RestrictedThresholdOut:
+    return RestrictedThresholdOut(threshold=restricted_service.get_age_limit_threshold(db))
+
+
+@app.put("/api/settings/restricted-threshold", response_model=RestrictedThresholdOut)
+def set_restricted_threshold(
+    body: RestrictedThresholdIn, db: Session = Depends(get_db), _: str = Depends(require_login)
+) -> RestrictedThresholdOut:
+    try:
+        restricted_service.set_age_limit_threshold(db, body.threshold)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return RestrictedThresholdOut(threshold=restricted_service.get_age_limit_threshold(db))

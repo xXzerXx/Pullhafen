@@ -1,11 +1,9 @@
 import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Table, Column
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Table, Column
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
-
-# restricted_domains folgt, sobald Stufe 9 (Einschränkungs-Logik) sie braucht.
 
 item_tags = Table(
     "item_tags",
@@ -63,6 +61,10 @@ class Item(Base):
     # dient Stufe 9 (Einschränkungs-Logik) als erste der drei Regel-Ebenen.
     source: Mapped[str | None] = mapped_column(String, nullable=True)
     age_limit: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Ebene 1 der Einschränkungs-Logik (app.services.restricted): None =
+    # kein manueller Override, True/False erzwingt eingeschränkt/nicht
+    # eingeschränkt unabhängig von Domain-Liste und age_limit.
+    restricted_override: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, nullable=False, default=datetime.datetime.utcnow
     )
@@ -90,3 +92,13 @@ class Performer(Base):
     name: Mapped[str] = mapped_column(String, nullable=False, unique=True)
 
     items: Mapped[list[Item]] = relationship(secondary=item_performers, back_populates="performers")
+
+
+class RestrictedDomain(Base):
+    """Ebene 2 der Einschränkungs-Logik: Domains, die unabhängig von
+    age_limit immer als eingeschränkt gelten."""
+
+    __tablename__ = "restricted_domains"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    domain: Mapped[str] = mapped_column(String, nullable=False, unique=True)
