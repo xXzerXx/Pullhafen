@@ -12,7 +12,10 @@ from app.database import SessionLocal, get_db
 from app.models import ApiToken, Item, Performer, RestrictedDomain, Tag
 from app.services import api_tokens as api_tokens_service
 from app.services.auth import (
+    PasswordTooLongError,
+    WrongPasswordError,
     bootstrap_admin_if_needed,
+    change_password,
     get_or_create_session_secret,
     verify_login,
 )
@@ -127,6 +130,26 @@ def logout(request: Request) -> dict:
 @app.get("/api/auth/me")
 def me(username: str = Depends(require_login)) -> dict:
     return {"username": username}
+
+
+class ChangePasswordIn(BaseModel):
+    current_password: str
+    new_password: str
+
+
+@app.post("/api/auth/change-password")
+def change_password_endpoint(
+    body: ChangePasswordIn,
+    db: Session = Depends(get_db),
+    username: str = Depends(require_login),
+) -> dict:
+    try:
+        change_password(db, username, body.current_password, body.new_password)
+    except WrongPasswordError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except PasswordTooLongError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"status": "ok"}
 
 
 @app.websocket("/ws")

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ApiError, apiTokens, type ApiTokenInfo, settings as settingsApi } from '../api'
+import { ApiError, apiTokens, auth, type ApiTokenInfo, settings as settingsApi } from '../api'
 import type { AppSettings } from '../types'
 
 export function Settings() {
@@ -11,6 +11,9 @@ export function Settings() {
   const [tokens, setTokens] = useState<ApiTokenInfo[]>([])
   const [newTokenLabel, setNewTokenLabel] = useState('')
   const [justCreatedToken, setJustCreatedToken] = useState<string | null>(null)
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [passwordStatus, setPasswordStatus] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -86,6 +89,18 @@ export function Settings() {
   async function removeToken(id: number) {
     await apiTokens.remove(id)
     setTokens(await apiTokens.list())
+  }
+
+  async function handleChangePassword() {
+    setPasswordStatus(null)
+    try {
+      await auth.changePassword(currentPassword, newPassword)
+      setPasswordStatus('Passwort geändert.')
+      setCurrentPassword('')
+      setNewPassword('')
+    } catch (err) {
+      setPasswordStatus(err instanceof ApiError ? err.message : 'Ändern fehlgeschlagen.')
+    }
   }
 
   if (loading || !settings) return <div className="page">Lädt…</div>
@@ -208,6 +223,32 @@ export function Settings() {
             Token erzeugen
           </button>
         </div>
+      </section>
+
+      <section>
+        <h2>Passwort ändern</h2>
+        <label>
+          Aktuelles Passwort
+          <input
+            type="password"
+            value={currentPassword}
+            onChange={(e) => setCurrentPassword(e.target.value)}
+            autoComplete="current-password"
+          />
+        </label>
+        <label>
+          Neues Passwort
+          <input
+            type="password"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            autoComplete="new-password"
+          />
+        </label>
+        {passwordStatus && <p className="hint">{passwordStatus}</p>}
+        <button onClick={handleChangePassword} disabled={!currentPassword || !newPassword}>
+          Passwort ändern
+        </button>
       </section>
     </div>
   )

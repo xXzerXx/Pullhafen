@@ -38,6 +38,11 @@ export const auth = {
     }),
   logout: () => request<{ status: string }>('/api/auth/logout', { method: 'POST' }),
   me: () => request<{ username: string }>('/api/auth/me'),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    request<{ status: string }>('/api/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    }),
 }
 
 export interface ListItemsParams {

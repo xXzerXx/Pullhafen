@@ -67,6 +67,18 @@ def verify_login(db: Session, username: str, password: str) -> bool:
     return _verify_password(password, user.password_hash)
 
 
+class WrongPasswordError(ValueError):
+    pass
+
+
+def change_password(db: Session, username: str, current_password: str, new_password: str) -> None:
+    user = db.query(AdminUser).filter(AdminUser.username == username).first()
+    if user is None or not _verify_password(current_password, user.password_hash):
+        raise WrongPasswordError("Aktuelles Passwort ist falsch.")
+    user.password_hash = _hash_password(new_password)
+    db.commit()
+
+
 def get_or_create_session_secret(db: Session) -> str:
     secret = get_setting(db, SESSION_SECRET_KEY_SETTING, "")
     if secret:
