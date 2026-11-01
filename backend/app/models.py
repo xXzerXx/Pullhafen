@@ -1,12 +1,25 @@
 import datetime
 
-from sqlalchemy import DateTime, Integer, String
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Table, Column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 
-# tags/performers/restricted_domains folgen, sobald Stufe 4 (yt-dlp) und
-# Stufe 9 (Einschränkungs-Logik) sie brauchen.
+# restricted_domains folgt, sobald Stufe 9 (Einschränkungs-Logik) sie braucht.
+
+item_tags = Table(
+    "item_tags",
+    Base.metadata,
+    Column("item_id", ForeignKey("items.id"), primary_key=True),
+    Column("tag_id", ForeignKey("tags.id"), primary_key=True),
+)
+
+item_performers = Table(
+    "item_performers",
+    Base.metadata,
+    Column("item_id", ForeignKey("items.id"), primary_key=True),
+    Column("performer_id", ForeignKey("performers.id"), primary_key=True),
+)
 
 
 class Setting(Base):
@@ -56,3 +69,24 @@ class Item(Base):
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, nullable=False, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow
     )
+
+    tags: Mapped[list["Tag"]] = relationship(secondary=item_tags, back_populates="items")
+    performers: Mapped[list["Performer"]] = relationship(secondary=item_performers, back_populates="items")
+
+
+class Tag(Base):
+    __tablename__ = "tags"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+
+    items: Mapped[list[Item]] = relationship(secondary=item_tags, back_populates="tags")
+
+
+class Performer(Base):
+    __tablename__ = "performers"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+
+    items: Mapped[list[Item]] = relationship(secondary=item_performers, back_populates="performers")

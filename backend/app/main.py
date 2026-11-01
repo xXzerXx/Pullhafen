@@ -6,7 +6,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal, get_db
-from app.models import Item
+from app.models import Item, Performer, Tag
 from app.services.auth import (
     bootstrap_admin_if_needed,
     get_or_create_session_secret,
@@ -133,6 +133,8 @@ class ItemOut(BaseModel):
     error_message: str | None
     source: str | None
     age_limit: int
+    tags: list[str]
+    performers: list[str]
 
     @classmethod
     def from_item(cls, item: Item) -> "ItemOut":
@@ -148,6 +150,8 @@ class ItemOut(BaseModel):
             error_message=item.error_message,
             source=item.source,
             age_limit=item.age_limit,
+            tags=sorted(tag.name for tag in item.tags),
+            performers=sorted(performer.name for performer in item.performers),
         )
 
 
@@ -200,9 +204,89 @@ def get_item(item_id: int, db: Session = Depends(get_db), _: str = Depends(requi
 
 
 @app.get("/api/items", response_model=list[ItemOut])
-def list_items(db: Session = Depends(get_db), _: str = Depends(require_login)) -> list[ItemOut]:
-    items = db.query(Item).order_by(Item.id).all()
+def list_items(
+    status: str | None = None,
+    search: str | None = None,
+    tag: str | None = None,
+    performer: str | None = None,
+    source: str | None = None,
+    db: Session = Depends(get_db),
+    _: str = Depends(require_login),
+) -> list[ItemOut]:
+    """EIN Endpunkt bedient alle Inhalts-Reiter (Warteschlange/Downloads/
+    Bibliothek) über Status- und Facettenfilter, statt für jeden Reiter
+    einen eigenen Endpunkt zu brauchen (siehe Plan, API-Oberfläche)."""
+    query = db.query(Item)
+    if status is not None:
+        query = query.filter(Item.status == status)
+    if search:
+        like = f"%{search}%"
+        query = query.filter((Item.filename.ilike(like)) | (Item.url.ilike(like)))
+    if tag is not None:
+        query = query.join(Item.tags).filter(Tag.name == tag)
+    if performer is not None:
+        query = query.join(Item.performers).filter(Performer.name == performer)
+    if source is not None:
+        query = query.filter(Item.source == source)
+    items = query.order_by(Item.id).all()
     return [ItemOut.from_item(item) for item in items]
+
+
+class TagsIn(BaseModel):
+    tags: list[str]
+
+
+class PerformersIn(BaseModel):
+    performers: list[str]
+
+
+def _get_or_create(db: Session, model: type, name: str):
+    clean = name.strip()
+    existing = db.query(model).filter(model.name == clean).first()
+    if existing is not None:
+        return existing
+    created = model(name=clean)
+    db.add(created)
+    db.flush()
+    return created
+
+
+@app.put("/api/items/{item_id}/tags", response_model=ItemOut)
+def set_item_tags(
+    item_id: int, body: TagsIn, db: Session = Depends(get_db), _: str = Depends(require_login)
+) -> ItemOut:
+    item = db.get(Item, item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Nicht gefunden.")
+    names = {name.strip() for name in body.tags if name.strip()}
+    item.tags = [_get_or_create(db, Tag, name) for name in sorted(names)]
+    db.commit()
+    db.refresh(item)
+    return ItemOut.from_item(item)
+
+
+@app.put("/api/items/{item_id}/performers", response_model=ItemOut)
+def set_item_performers(
+    item_id: int, body: PerformersIn, db: Session = Depends(get_db), _: str = Depends(require_login)
+) -> ItemOut:
+    item = db.get(Item, item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Nicht gefunden.")
+    names = {name.strip() for name in body.performers if name.strip()}
+    item.performers = [_get_or_create(db, Performer, name) for name in sorted(names)]
+    db.commit()
+    db.refresh(item)
+    return ItemOut.from_item(item)
+
+
+@app.get("/api/tags", response_model=list[str])
+def list_tags(db: Session = Depends(get_db), _: str = Depends(require_login)) -> list[str]:
+    return [t.name for t in db.query(Tag).order_by(Tag.name).all()]
+
+
+@app.get("/api/performers", response_model=list[str])
+def list_performers(db: Session = Depends(get_db), _: str = Depends(require_login)) -> list[str]:
+    return [p.name for p in db.query(Performer).order_by(Performer.name).all()]
 
 
 @app.post("/api/items/{item_id}/pause", response_model=ItemOut)

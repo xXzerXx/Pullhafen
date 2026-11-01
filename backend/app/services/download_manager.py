@@ -34,6 +34,8 @@ def _item_snapshot(item: Item) -> dict:
         "error_message": item.error_message,
         "source": item.source,
         "age_limit": item.age_limit,
+        "tags": sorted(tag.name for tag in item.tags),
+        "performers": sorted(performer.name for performer in item.performers),
     }
 
 
