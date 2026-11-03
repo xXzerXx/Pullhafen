@@ -71,11 +71,67 @@ class WrongPasswordError(ValueError):
     pass
 
 
+class UsernameTakenError(ValueError):
+    pass
+
+
+class SelfDeleteError(ValueError):
+    pass
+
+
+class LastAccountError(ValueError):
+    pass
+
+
 def change_password(db: Session, username: str, current_password: str, new_password: str) -> None:
     user = db.query(AdminUser).filter(AdminUser.username == username).first()
     if user is None or not _verify_password(current_password, user.password_hash):
         raise WrongPasswordError("Aktuelles Passwort ist falsch.")
     user.password_hash = _hash_password(new_password)
+    db.commit()
+
+
+def list_usernames(db: Session) -> list[str]:
+    return [u.username for u in db.query(AdminUser).order_by(AdminUser.username).all()]
+
+
+def create_user(
+    db: Session,
+    requesting_username: str,
+    requesting_password: str,
+    new_username: str,
+    new_password: str,
+) -> None:
+    """Legt ein weiteres Konto an - erfordert das eigene aktuelle Passwort
+    des schon eingeloggten Nutzers als Bestätigung (Thomas' Wunsch:
+    sicherheitsrelevante Kontoänderungen immer übers eigene Passwort
+    bestätigen, nicht nur über die aktive Session/den Cookie)."""
+    if not verify_login(db, requesting_username, requesting_password):
+        raise WrongPasswordError("Aktuelles Passwort ist falsch.")
+    new_username = new_username.strip()
+    if not new_username:
+        raise ValueError("Benutzername darf nicht leer sein.")
+    if db.query(AdminUser).filter(AdminUser.username == new_username).first() is not None:
+        raise UsernameTakenError("Dieser Benutzername ist schon vergeben.")
+    db.add(AdminUser(username=new_username, password_hash=_hash_password(new_password)))
+    db.commit()
+
+
+def delete_user(db: Session, requesting_username: str, requesting_password: str, target_username: str) -> None:
+    """Entfernt ein Konto - ebenfalls übers eigene aktuelle Passwort bestätigt.
+    Das eigene Konto kann hier nicht gelöscht werden (würde die eigene
+    Session verwaisen lassen), und es muss immer mindestens ein Konto
+    übrig bleiben, damit niemand sich selbst aussperrt."""
+    if not verify_login(db, requesting_username, requesting_password):
+        raise WrongPasswordError("Aktuelles Passwort ist falsch.")
+    if target_username == requesting_username:
+        raise SelfDeleteError("Das eigene Konto kann hier nicht gelöscht werden.")
+    user = db.query(AdminUser).filter(AdminUser.username == target_username).first()
+    if user is None:
+        raise ValueError("Konto nicht gefunden.")
+    if db.query(AdminUser).count() <= 1:
+        raise LastAccountError("Es muss mindestens ein Konto übrig bleiben.")
+    db.delete(user)
     db.commit()
 
 

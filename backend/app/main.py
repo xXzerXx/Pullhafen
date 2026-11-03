@@ -14,13 +14,20 @@ from app.version import PULLHAFEN_VERSION
 from app.database import SessionLocal, get_db
 from app.models import ApiToken, Item, Performer, RestrictedDomain, Tag
 from app.services import api_tokens as api_tokens_service
+from app.services import audio_extract as audio_extract_service
 from app.services import thumbnails as thumbnails_service
 from app.services.auth import (
+    LastAccountError,
     PasswordTooLongError,
+    SelfDeleteError,
+    UsernameTakenError,
     WrongPasswordError,
     bootstrap_admin_if_needed,
     change_password,
+    create_user,
+    delete_user,
     get_or_create_session_secret,
+    list_usernames,
     verify_login,
 )
 from app.services import download_manager as dm
@@ -156,6 +163,69 @@ def change_password_endpoint(
     return {"status": "ok"}
 
 
+class VerifyPasswordIn(BaseModel):
+    password: str
+
+
+@app.post("/api/auth/verify-password")
+def verify_password_endpoint(
+    body: VerifyPasswordIn, db: Session = Depends(get_db), username: str = Depends(require_login)
+) -> dict:
+    """Bestätigt das eigene Passwort der schon eingeloggten Person, ohne
+    sonst etwas zu verändern - fürs Frontend, wenn eine Aktion (z.B.
+    eingeschränkte Inhalte im Bibliotheks-Filter sichtbar machen) erst nach
+    einer echten Passwortbestätigung erlaubt sein soll, nicht nur per Klick."""
+    return {"valid": verify_login(db, username, body.password)}
+
+
+class UserOut(BaseModel):
+    username: str
+
+
+@app.get("/api/auth/users", response_model=list[UserOut])
+def list_users_endpoint(db: Session = Depends(get_db), _: str = Depends(require_login)) -> list[UserOut]:
+    return [UserOut(username=u) for u in list_usernames(db)]
+
+
+class CreateUserIn(BaseModel):
+    current_password: str
+    new_username: str
+    new_password: str
+
+
+@app.post("/api/auth/users", response_model=UserOut)
+def create_user_endpoint(
+    body: CreateUserIn, db: Session = Depends(get_db), username: str = Depends(require_login)
+) -> UserOut:
+    try:
+        create_user(db, username, body.current_password, body.new_username, body.new_password)
+    except WrongPasswordError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    except (UsernameTakenError, PasswordTooLongError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return UserOut(username=body.new_username.strip())
+
+
+class DeleteUserIn(BaseModel):
+    current_password: str
+
+
+@app.delete("/api/auth/users/{target_username}")
+def delete_user_endpoint(
+    target_username: str,
+    body: DeleteUserIn,
+    db: Session = Depends(get_db),
+    username: str = Depends(require_login),
+) -> dict:
+    try:
+        delete_user(db, username, body.current_password, target_username)
+    except WrongPasswordError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    except (SelfDeleteError, LastAccountError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"status": "ok"}
+
+
 @app.websocket("/ws")
 async def ws_endpoint(websocket: WebSocket) -> None:
     # SessionMiddleware liest das Session-Cookie auch beim WebSocket-
@@ -213,6 +283,8 @@ class ItemOut(BaseModel):
     status: str
     filename: str | None
     file_path: str | None
+    audio_path: str | None
+    quality_preset: str | None
     bytes_downloaded: int
     total_bytes: int | None
     error_message: str | None
@@ -247,6 +319,8 @@ class ItemOut(BaseModel):
             status=item.status,
             filename=item.filename,
             file_path=item.file_path,
+            audio_path=item.audio_path,
+            quality_preset=item.quality_preset,
             bytes_downloaded=item.bytes_downloaded,
             total_bytes=item.total_bytes,
             error_message=item.error_message,
@@ -421,6 +495,44 @@ def stream_item(item_id: int, db: Session = Depends(get_db), _: str = Depends(re
     return FileResponse(path, filename=item.filename or path.name)
 
 
+@app.post("/api/items/{item_id}/convert-audio", response_model=ItemOut)
+async def convert_audio(item_id: int, db: Session = Depends(get_db), _: str = Depends(require_login)) -> ItemOut:
+    """Extrahiert die Tonspur eines schon abgeschlossenen Downloads als
+    echte .mp3-Datei (siehe app.services.audio_extract) - läuft in einem
+    Worker-Thread, damit der ffmpeg-Aufruf den Event-Loop nicht blockiert,
+    genau wie der yt-dlp-Trockenlauf beim Hinzufügen eines Links."""
+    item = db.get(Item, item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Nicht gefunden.")
+    if item.status != "completed" or not item.file_path:
+        raise HTTPException(status_code=400, detail="Nur abgeschlossene Downloads lassen sich umwandeln.")
+    video_path = Path(item.file_path)
+    if not video_path.exists():
+        raise HTTPException(status_code=404, detail="Datei nicht gefunden.")
+    try:
+        audio_path = await asyncio.to_thread(audio_extract_service.extract_audio_mp3, video_path)
+    except audio_extract_service.AudioExtractionError as exc:
+        raise HTTPException(status_code=500, detail=f"Umwandlung fehlgeschlagen: {exc}") from exc
+    item.audio_path = str(audio_path)
+    db.commit()
+    db.refresh(item)
+    domains, threshold = _restricted_context(db)
+    out = ItemOut.from_item(item, domains, threshold)
+    await ws_manager.broadcast({"type": "item_update", "item": out.model_dump()})
+    return out
+
+
+@app.get("/api/items/{item_id}/audio")
+def stream_item_audio(item_id: int, db: Session = Depends(get_db), _: str = Depends(require_login)) -> FileResponse:
+    item = db.get(Item, item_id)
+    if item is None or not item.audio_path:
+        raise HTTPException(status_code=404, detail="Keine Audiodatei vorhanden.")
+    path = Path(item.audio_path)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Datei nicht gefunden.")
+    return FileResponse(path, filename=path.name)
+
+
 @app.get("/api/items", response_model=list[ItemOut])
 def list_items(
     status: str | None = None,
@@ -593,23 +705,31 @@ async def start_item(item_id: int, db: Session = Depends(get_db), _: str = Depen
 
 @app.delete("/api/items/{item_id}")
 async def delete_item(item_id: int, db: Session = Depends(get_db), _: str = Depends(require_login)) -> dict:
-    """Aus der Warteschlange entfernen (Vorschau-Design) - nur erlaubt, wenn
-    gerade kein Task läuft (sonst zuerst pausieren) und keine echte Datei auf
-    der Platte liegt, die man damit unbeabsichtigt verwaist zurücklassen
-    würde (ein 'completed' Item löscht man bewusst nicht einfach so weg)."""
+    """Entfernt einen Eintrag komplett - aus der Warteschlange/Downloads
+    genauso wie aus der Bibliothek (ein 'completed' Item löscht hier
+    tatsächlich die fertige Datei, nicht nur eine Teildatei; das Frontend
+    fragt vorher per Bestätigungsdialog nach, siehe Library.tsx). Nur
+    erlaubt, wenn gerade kein Task läuft (sonst zuerst pausieren). Der
+    Datenbankeintrag wird hart gelöscht (nicht nur als 'gelöscht' markiert),
+    damit der Duplikat-Check in _create_link_item beim erneuten Einfügen
+    derselben URL die echten Daten als wirklich weg erkennt, statt sie
+    fälschlich als 'schon vorhanden' zu melden."""
     item = db.get(Item, item_id)
     if item is None:
         raise HTTPException(status_code=404, detail="Nicht gefunden.")
     if dm.is_active(item.id):
         raise HTTPException(status_code=409, detail="Download läuft gerade - zuerst pausieren.")
-    if item.status == "completed":
-        raise HTTPException(status_code=400, detail="Abgeschlossene Downloads können hier nicht gelöscht werden.")
     if item.file_path:
-        # Eine pausierte Teildatei bleibt sonst verwaist auf der Platte
-        # liegen - ein 'completed' Item kommt hier nie an (siehe oben).
-        partial = Path(item.file_path)
-        if partial.exists():
-            partial.unlink()
+        real_file = Path(item.file_path)
+        if real_file.exists():
+            real_file.unlink()
+    if item.audio_path:
+        audio_file = Path(item.audio_path)
+        if audio_file.exists():
+            audio_file.unlink()
+    cached_thumbnail = thumbnails_service.thumbnail_path_for(item_id)
+    if cached_thumbnail is not None:
+        cached_thumbnail.unlink()
     db.delete(item)
     db.commit()
     await ws_manager.broadcast({"type": "item_removed", "id": item_id})

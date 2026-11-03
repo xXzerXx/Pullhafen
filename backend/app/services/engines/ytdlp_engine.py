@@ -146,16 +146,20 @@ def download_sync(
     if force_restart:
         _delete_matching_files(url, target_dir, outtmpl)
     format_selector, merge_format = QUALITY_PRESETS.get(quality_preset, QUALITY_PRESETS[DEFAULT_QUALITY_PRESET])
+    postprocessors = [{"key": "FFmpegMetadata"}, {"key": "EmbedThumbnail"}]
+    if quality_preset == "audio":
+        # "Nur Audio" muss wirklich eine eigenständige .mp3 ergeben, nicht
+        # nur den rohen Audio-Stream (z.B. Opus/webm) in einen mkv-Container
+        # umbenannt - echter Fund beim Bauen der MP3-Umwandlung: ohne diesen
+        # Postprocessor kam zwar "bestaudio" an, aber als .mkv, nie als .mp3.
+        postprocessors.insert(0, {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"})
     opts = {
         **_base_opts(),
         "outtmpl": outtmpl,
         "format": format_selector,
         "merge_output_format": merge_format,
         "progress_hooks": [progress_hook],
-        "postprocessors": [
-            {"key": "FFmpegMetadata"},
-            {"key": "EmbedThumbnail"},
-        ],
+        "postprocessors": postprocessors,
         "writethumbnail": True,
     }
     if force_restart:

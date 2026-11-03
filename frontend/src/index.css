@@ -48,6 +48,16 @@ a:hover {
   }
 }
 
+@keyframes iconspin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.icon-spin {
+  animation: iconspin 0.8s linear infinite;
+  transform-origin: center;
+}
+
 button {
   font: inherit;
   background: var(--surface-raised);
@@ -612,6 +622,7 @@ main {
 .library-card__thumb {
   width: 100%;
   height: 128px;
+  cursor: pointer;
 }
 .library-card__duration-badge {
   position: absolute;
@@ -780,6 +791,70 @@ main {
   border-color: var(--accent);
   color: var(--text);
 }
+.library-card__icon-btn,
+.library-card__delete {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: 6px;
+  padding: 6px 9px;
+  cursor: pointer;
+}
+.library-card__icon-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.library-card__delete:hover:not(:disabled) {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.library-card__info {
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 12px;
+}
+.library-card__info-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 500;
+  margin-bottom: 8px;
+  color: var(--text-muted);
+}
+.library-card__info dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 10px;
+  margin: 0;
+}
+.library-card__info dt {
+  color: var(--text-muted);
+}
+.library-card__info dd {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.library-card__info dd code {
+  font-family: var(--mono);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.library-card__info-copy {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  font-size: 11px;
+  border-radius: 999px;
+}
 .library-card__play {
   flex: 1;
   display: flex;
@@ -885,8 +960,21 @@ main {
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
+  overflow: hidden;
+  background: radial-gradient(ellipse 800px 500px at 50% 15%, rgba(232, 163, 61, 0.08), transparent 60%), var(--bg);
+}
+.login-page__waves {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: var(--border);
+  stroke-width: 2;
 }
 .login-form {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -896,9 +984,32 @@ main {
   padding: 28px;
   width: 280px;
 }
+.login-form__brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.login-form__brand-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  background: var(--accent-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 4px;
+}
 .login-form h1 {
   font-family: var(--display);
-  margin: 0 0 4px;
+  margin: 0;
+}
+.login-form__tagline {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
 }
 .login-form label {
   display: flex;

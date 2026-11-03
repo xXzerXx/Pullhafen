@@ -13,6 +13,13 @@ RUN npm run build
 # --- Stage 2: Backend + Laufzeit ----------------------------------------
 FROM python:3.14-slim AS backend
 
+# Verknüpft das gebaute Image mit dem Quell-Repo (GHCR zeigt es dann direkt
+# auf der Repo-Seite unter "Packages" an, statt als loses, unverknüpftes
+# Package zu erscheinen).
+LABEL org.opencontainers.image.source="https://github.com/xXzerXx/Pullhafen"
+LABEL org.opencontainers.image.description="Pullhafen - selbst gehosteter Download-Manager (yt-dlp + generische Downloads)"
+LABEL org.opencontainers.image.licenses="NOASSERTION"
+
 # ffmpeg wird von yt-dlps FFmpegMetadata/EmbedThumbnail-Postprocessors und
 # fürs Mergen von bestvideo+bestaudio gebraucht (siehe Stufe 4/7) - sonst
 # bewusst keine weitere Fremdsoftware im Image (mkvtoolnix o.ä. wurde nie

@@ -53,6 +53,15 @@ class Item(Base):
     status: Mapped[str] = mapped_column(String, nullable=False, default="queued")
     filename: Mapped[str | None] = mapped_column(String, nullable=True)
     file_path: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Nur gesetzt, nachdem die Tonspur per POST .../convert-audio echt per
+    # ffmpeg extrahiert wurde - die Originaldatei bleibt dabei unverändert,
+    # das hier ist ein zusätzlicher, eigenständiger Dateipfad daneben.
+    audio_path: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Nur bei engine='ytdlp': welches Qualitäts-Preset beim Start dieses
+    # konkreten Downloads aktiv war (die globale Einstellung kann sich
+    # danach ändern, dieses Feld bleibt die Qualität DIESER Datei) - für den
+    # Info-Button in der Bibliothek.
+    quality_preset: Mapped[str | None] = mapped_column(String, nullable=True)
     bytes_downloaded: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     total_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error_message: Mapped[str | None] = mapped_column(String, nullable=True)

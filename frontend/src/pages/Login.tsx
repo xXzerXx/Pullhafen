@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { ApiError, auth } from '../api'
+import { PullhafenGlyph } from '../components/icons'
 
 export function Login({ onLoggedIn }: { onLoggedIn: (username: string) => void }) {
   const [username, setUsername] = useState('')
@@ -23,8 +24,19 @@ export function Login({ onLoggedIn }: { onLoggedIn: (username: string) => void }
 
   return (
     <div className="login-page">
+      <svg className="login-page__waves" aria-hidden="true" viewBox="0 0 600 400" preserveAspectRatio="none">
+        <path d="M-20,260 Q130,220 280,260 T580,260" />
+        <path d="M-20,310 Q130,270 280,310 T580,310" />
+        <path d="M-20,360 Q130,320 280,360 T580,360" />
+      </svg>
       <form className="login-form" onSubmit={handleSubmit}>
-        <h1>Pullhafen</h1>
+        <div className="login-form__brand">
+          <div className="login-form__brand-icon" aria-hidden="true">
+            <PullhafenGlyph size={30} />
+          </div>
+          <h1>Pullhafen</h1>
+          <p className="login-form__tagline">Hier legt jeder Download an.</p>
+        </div>
         <label>
           Benutzername
           <input

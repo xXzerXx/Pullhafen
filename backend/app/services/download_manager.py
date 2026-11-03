@@ -241,6 +241,8 @@ async def run_ytdlp_download(item_id: int, *, restart: bool = False) -> None:
         root = resolve_downloads_root(db)
         target_dir = root / (item.source or "Unbekannt")
         quality = get_default_quality(db)
+        item.quality_preset = quality
+        db.commit()
         loop = asyncio.get_running_loop()
 
         # bestvideo+bestaudio lädt zwei getrennte Formate (Video, dann Audio)

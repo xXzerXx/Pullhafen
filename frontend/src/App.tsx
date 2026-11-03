@@ -6,7 +6,7 @@ import { Queue } from './pages/Queue'
 import { Downloads } from './pages/Downloads'
 import { Library } from './pages/Library'
 import { Settings } from './pages/Settings'
-import { SearchIcon, PlusIcon } from './components/icons'
+import { SearchIcon, PlusIcon, PullhafenGlyph } from './components/icons'
 import { AddLinkPanel, type AddLinkResult } from './components/AddLinkPanel'
 
 type Tab = 'queue' | 'downloads' | 'library' | 'settings'
@@ -50,20 +50,7 @@ function AppShell({ username, onLoggedOut }: { username: string; onLoggedOut: ()
           <header className="app-header">
             <div className="app-header__brand">
               <div className="app-header__brand-icon" aria-hidden="true">
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="#E8A33D"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M12 3v12" />
-                  <path d="M7 10l5 5 5-5" />
-                  <path d="M4 19h16" />
-                </svg>
+                <PullhafenGlyph size={22} />
               </div>
               <div className="app-header__brand-name">Pullhafen</div>
             </div>

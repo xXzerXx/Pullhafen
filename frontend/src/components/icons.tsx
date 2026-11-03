@@ -149,6 +149,173 @@ export function DownloadIcon({ size = 13, className }: IconProps) {
   )
 }
 
+export function TrashIcon({ size = 13, className }: IconProps) {
+  return (
+    <svg
+      aria-hidden="true"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      <path d="M4 7h16" />
+      <path d="M10 7V4h4v3" />
+      <path d="M6 7l1 13a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-13" />
+      <path d="M10 11v6M14 11v6" />
+    </svg>
+  )
+}
+
+export function MusicNoteIcon({ size = 13, className }: IconProps) {
+  return (
+    <svg
+      aria-hidden="true"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      <path d="M9 18V5l11-2v13" />
+      <circle cx="6" cy="18" r="3" />
+      <circle cx="17" cy="16" r="3" />
+    </svg>
+  )
+}
+
+export function MusicDownloadIcon({ size = 15, className }: IconProps) {
+  return (
+    <svg
+      aria-hidden="true"
+      width={(size * 28) / 24}
+      height={size}
+      viewBox="0 0 28 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      <path d="M6 15V4l8-1.5v10" />
+      <circle cx="4.3" cy="15" r="2.3" />
+      <circle cx="12.3" cy="12.5" r="2.3" />
+      <path d="M22 9v10" />
+      <path d="M18 15l4 4 4-4" />
+    </svg>
+  )
+}
+
+export function SpinnerIcon({ size = 13, className }: IconProps) {
+  return (
+    <svg
+      aria-hidden="true"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.4"
+      strokeLinecap="round"
+      className={`icon-spin ${className ?? ''}`}
+    >
+      <path d="M12 3a9 9 0 1 1-6.36 2.64" opacity="0.9" />
+    </svg>
+  )
+}
+
+export function InfoIcon({ size = 13, className }: IconProps) {
+  return (
+    <svg
+      aria-hidden="true"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 11v6" />
+      <circle cx="12" cy="7.5" r="0.2" fill="currentColor" stroke="currentColor" strokeWidth="1.8" />
+    </svg>
+  )
+}
+
+/** Das Pullhafen-Zeichen: ein Pfeil (Pull/Download), der in ein Becken
+ * mit Wellenlinie läuft (Hafen) - nur der Strich, ohne Hintergrund, für den
+ * Einsatz in bereits vorhandenen Chips/Containern (Header, Login). */
+export function PullhafenGlyph({ size = 18, className }: IconProps) {
+  return (
+    <svg aria-hidden="true" width={size} height={size} viewBox="0 0 100 100" className={className}>
+      <path
+        d="M32,14 L50,28 L68,14"
+        fill="none"
+        stroke="#E8A33D"
+        strokeWidth="8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M50,26 L50,46"
+        fill="none"
+        stroke="#E8A33D"
+        strokeWidth="8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M28,46 C28,62 37,70 50,70 C63,70 72,62 72,46"
+        fill="none"
+        stroke="#E8A33D"
+        strokeWidth="8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M12,82 Q26,76 40,82 T68,82 T92,82"
+        fill="none"
+        stroke="#9fd3f0"
+        strokeWidth="5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M16,90 Q30,85 44,90 T72,90 T96,90"
+        fill="none"
+        stroke="#9fd3f0"
+        strokeWidth="4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        opacity="0.55"
+      />
+    </svg>
+  )
+}
+
+/** Dasselbe Zeichen inklusive eigenem abgerundetem Hintergrund-Quadrat -
+ * für Stellen ohne vorhandenen Chip-Container (Favicon, Extension-Icon). */
+export function PullhafenMark({ size = 18, className }: IconProps) {
+  return (
+    <svg aria-hidden="true" width={size} height={size} viewBox="0 0 100 100" className={className}>
+      <rect x="0" y="0" width="100" height="100" rx="20" fill="#0d1321" />
+      <PullhafenGlyph size={100} />
+    </svg>
+  )
+}
+
 export function FilmIcon({ size = 18, className }: IconProps) {
   return (
     <svg

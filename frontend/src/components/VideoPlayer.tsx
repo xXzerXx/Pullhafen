@@ -4,12 +4,16 @@ import type { Item } from '../types'
 import { CloseIcon, DownloadIcon } from './icons'
 
 // Safari zeigt bei inkompatiblem Codec (z.B. VP9/AV1 in mkv) teils gar kein
-// 'error'-Event, sondern bleibt einfach schwarz stehen (readyState bleibt
-// auf 0). Deshalb hier zusätzlich zu 'error' ein echtes Zeitlimit: wenn nach
-// PLAYBACK_TIMEOUT_MS weder ein Frame gerendert ('loadeddata') noch ein
-// Fehler gemeldet wurde, gilt die Wiedergabe als gescheitert - echtes
-// Verhalten, nicht geraten anhand von Dateiendung/Codec-Namen.
-const PLAYBACK_TIMEOUT_MS = 8000
+// 'error'-Event. Echter Fund (Thomas, 2026-11-03): ein einmaliger Timeout,
+// der nur grob auf readyState>=2 prüfte, reicht nicht - Safari kann
+// readyState kurz auf "Frame vorhanden" setzen, ohne dass 'loadeddata'
+// jemals feuert oder tatsächlich etwas sichtbar/hörbar abgespielt wird, und
+// der einmalige Check hat das dann fälschlich als "lädt noch" durchgehen
+// lassen, ohne je erneut zu prüfen - die Warnung kam nie. Deshalb jetzt ein
+// wiederholter Check auf den einzigen wirklich verlässlichen Beweis für
+// echte Wiedergabe: ob currentTime tatsächlich voranschreitet.
+const PLAYBACK_CHECK_INTERVAL_MS = 1500
+const PLAYBACK_MAX_WAIT_MS = 9000
 
 export function VideoPlayer({ item, onClose }: { item: Item; onClose: () => void }) {
   const [status, setStatus] = useState<'loading' | 'ok' | 'failed'>('loading')
@@ -27,17 +31,22 @@ export function VideoPlayer({ item, onClose }: { item: Item; onClose: () => void
   useEffect(() => {
     resolvedRef.current = false
     setStatus('loading')
-    const timer = window.setTimeout(() => {
+    let elapsedMs = 0
+    const interval = window.setInterval(() => {
       if (resolvedRef.current) return
       const el = videoRef.current
-      // readyState >= 2 (HAVE_CURRENT_DATA) heißt: es wurde tatsächlich schon
-      // ein Frame dekodiert - dann einfach noch etwas länger laden lassen,
-      // statt fälschlich "gescheitert" zu melden.
-      if (el && el.readyState >= 2) return
-      resolvedRef.current = true
-      setStatus('failed')
-    }, PLAYBACK_TIMEOUT_MS)
-    return () => window.clearTimeout(timer)
+      elapsedMs += PLAYBACK_CHECK_INTERVAL_MS
+      if (el && el.currentTime > 0) {
+        resolvedRef.current = true
+        setStatus('ok')
+        return
+      }
+      if (elapsedMs >= PLAYBACK_MAX_WAIT_MS) {
+        resolvedRef.current = true
+        setStatus('failed')
+      }
+    }, PLAYBACK_CHECK_INTERVAL_MS)
+    return () => window.clearInterval(interval)
   }, [item.id])
 
   function handleLoadedData() {

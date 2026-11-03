@@ -74,18 +74,30 @@ export function Settings() {
   const [loading, setLoading] = useState(true)
   const [showSafariPrompt, setShowSafariPrompt] = useState(false)
 
+  const [users, setUsers] = useState<{ username: string }[]>([])
+  const [newAccountUsername, setNewAccountUsername] = useState('')
+  const [newAccountPassword, setNewAccountPassword] = useState('')
+  const [newAccountPasswordRepeat, setNewAccountPasswordRepeat] = useState('')
+  const [newAccountCurrentPassword, setNewAccountCurrentPassword] = useState('')
+  const [userManagementStatus, setUserManagementStatus] = useState<string | null>(null)
+  const [deletingUser, setDeletingUser] = useState<string | null>(null)
+  const [deleteUserPassword, setDeleteUserPassword] = useState('')
+  const [deleteUserStatus, setDeleteUserStatus] = useState<string | null>(null)
+
   async function loadAll() {
-    const [s, t, d, tok] = await Promise.all([
+    const [s, t, d, tok, u] = await Promise.all([
       settingsApi.get(),
       settingsApi.getRestrictedThreshold(),
       settingsApi.listRestrictedDomains(),
       apiTokens.list(),
+      auth.listUsers(),
     ])
     setSettings(s)
     setTokens(tok)
     setDownloadsSubpathInput(s.downloads_subpath)
     setThreshold(t.threshold)
     setDomains(d)
+    setUsers(u)
   }
 
   useEffect(() => {
@@ -192,6 +204,43 @@ export function Settings() {
       setNewPasswordRepeat('')
     } catch (err) {
       setPasswordStatus(err instanceof ApiError ? err.message : 'Ändern fehlgeschlagen.')
+    }
+  }
+
+  async function handleCreateUser() {
+    setUserManagementStatus(null)
+    if (newAccountPassword !== newAccountPasswordRepeat) {
+      setUserManagementStatus('Die beiden Passwörter für das neue Konto stimmen nicht überein.')
+      return
+    }
+    try {
+      await auth.createUser(newAccountCurrentPassword, newAccountUsername, newAccountPassword)
+      setUsers(await auth.listUsers())
+      setUserManagementStatus(`Konto "${newAccountUsername.trim()}" angelegt.`)
+      setNewAccountUsername('')
+      setNewAccountPassword('')
+      setNewAccountPasswordRepeat('')
+      setNewAccountCurrentPassword('')
+    } catch (err) {
+      setUserManagementStatus(err instanceof ApiError ? err.message : 'Anlegen fehlgeschlagen.')
+    }
+  }
+
+  function startDeleteUser(username: string) {
+    setDeletingUser(username)
+    setDeleteUserPassword('')
+    setDeleteUserStatus(null)
+  }
+
+  async function confirmDeleteUser() {
+    if (!deletingUser) return
+    try {
+      await auth.deleteUser(deletingUser, deleteUserPassword)
+      setUsers(await auth.listUsers())
+      setDeletingUser(null)
+      setDeleteUserPassword('')
+    } catch (err) {
+      setDeleteUserStatus(err instanceof ApiError ? err.message : 'Löschen fehlgeschlagen.')
     }
   }
 
@@ -421,6 +470,87 @@ export function Settings() {
           disabled={!currentPassword || !newPassword || !newPasswordRepeat}
         >
           Passwort ändern
+        </button>
+      </section>
+
+      <section>
+        <h2>Benutzerkonten</h2>
+        <ul className="domain-list">
+          {users.map((u) => (
+            <li key={u.username}>
+              {u.username}
+              {deletingUser === u.username ? (
+                <span className="inline-form" style={{ marginLeft: 8 }}>
+                  <input
+                    type="password"
+                    placeholder="Eigenes Passwort zur Bestätigung"
+                    value={deleteUserPassword}
+                    onChange={(e) => setDeleteUserPassword(e.target.value)}
+                    autoComplete="current-password"
+                  />
+                  <button onClick={confirmDeleteUser} disabled={!deleteUserPassword}>
+                    Löschen bestätigen
+                  </button>
+                  <button onClick={() => setDeletingUser(null)}>Abbrechen</button>
+                </span>
+              ) : (
+                <button onClick={() => startDeleteUser(u.username)}>Entfernen</button>
+              )}
+            </li>
+          ))}
+          {users.length === 0 && <li className="empty-hint">Keine Konten.</li>}
+        </ul>
+        {deleteUserStatus && <p className="hint">{deleteUserStatus}</p>}
+
+        <p className="hint">
+          Weiteres Konto anlegen - wird mit deinem eigenen aktuellen Passwort bestätigt, nicht nur per Klick.
+        </p>
+        <label>
+          Neuer Benutzername
+          <input
+            value={newAccountUsername}
+            onChange={(e) => setNewAccountUsername(e.target.value)}
+            autoComplete="off"
+          />
+        </label>
+        <label>
+          Passwort für das neue Konto
+          <input
+            type="password"
+            value={newAccountPassword}
+            onChange={(e) => setNewAccountPassword(e.target.value)}
+            autoComplete="new-password"
+          />
+        </label>
+        <label>
+          Passwort wiederholen
+          <input
+            type="password"
+            value={newAccountPasswordRepeat}
+            onChange={(e) => setNewAccountPasswordRepeat(e.target.value)}
+            autoComplete="new-password"
+          />
+        </label>
+        <label>
+          Dein eigenes aktuelles Passwort (zur Bestätigung)
+          <input
+            type="password"
+            value={newAccountCurrentPassword}
+            onChange={(e) => setNewAccountCurrentPassword(e.target.value)}
+            autoComplete="current-password"
+          />
+        </label>
+        {userManagementStatus && <p className="hint">{userManagementStatus}</p>}
+        <button
+          onClick={handleCreateUser}
+          disabled={
+            !newAccountUsername.trim() ||
+            !newAccountPassword ||
+            !newAccountPasswordRepeat ||
+            !newAccountCurrentPassword
+          }
+        >
+          Konto anlegen
         </button>
       </section>
 

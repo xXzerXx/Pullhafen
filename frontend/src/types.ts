@@ -8,6 +8,8 @@ export interface Item {
   status: ItemStatus
   filename: string | null
   file_path: string | null
+  audio_path: string | null
+  quality_preset: string | null
   bytes_downloaded: number
   total_bytes: number | null
   error_message: string | null

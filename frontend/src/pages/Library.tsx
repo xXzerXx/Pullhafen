@@ -1,13 +1,30 @@
 import { useMemo, useState } from 'react'
-import { items as itemsApi } from '../api'
+import { auth, items as itemsApi } from '../api'
 import { useItems } from '../ItemsContext'
 import type { Item } from '../types'
 import { Thumbnail } from '../components/Thumbnail'
 import { VideoPlayer } from '../components/VideoPlayer'
-import { PlayIcon, FolderIcon, DownloadIcon } from '../components/icons'
-import { formatDuration, formatRelative } from '../format'
+import {
+  PlayIcon,
+  DownloadIcon,
+  TrashIcon,
+  MusicNoteIcon,
+  MusicDownloadIcon,
+  SpinnerIcon,
+  InfoIcon,
+  CloseIcon,
+} from '../components/icons'
+import { formatBytes, formatDuration, formatRelative } from '../format'
 import { ToggleSwitch } from '../components/ToggleSwitch'
 import { TagEditor } from '../components/TagEditor'
+
+const QUALITY_LABELS: Record<string, string> = {
+  best: 'Beste Qualität',
+  '1080p': '1080p',
+  '720p': '720p',
+  audio: 'Nur Audio',
+  compatible: 'Kompatibel (H.264/AAC)',
+}
 
 interface LibraryCardProps {
   item: Item
@@ -17,9 +34,13 @@ interface LibraryCardProps {
 }
 
 function LibraryCard({ item, onPlay, knownTags, knownPerformers }: LibraryCardProps) {
-  const { reload } = useItems()
+  const { reload, removeItem } = useItems()
   const [saving, setSaving] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [converting, setConverting] = useState(false)
+  const [convertError, setConvertError] = useState<string | null>(null)
+  const [showInfo, setShowInfo] = useState(false)
 
   async function saveTags(next: string[]) {
     await itemsApi.setTags(item.id, next)
@@ -53,9 +74,36 @@ function LibraryCard({ item, onPlay, knownTags, knownPerformers }: LibraryCardPr
     }
   }
 
+  async function handleConvertAudio() {
+    setConverting(true)
+    setConvertError(null)
+    try {
+      await itemsApi.convertAudio(item.id)
+      await reload()
+    } catch {
+      setConvertError('Umwandlung fehlgeschlagen.')
+    } finally {
+      setConverting(false)
+    }
+  }
+
+  async function handleDelete() {
+    const label = item.title ?? item.filename ?? item.url
+    const confirmed = window.confirm(
+      `"${label}" wirklich endgültig löschen? Die Datei auf der Platte wird dabei mit entfernt - das lässt sich nicht rückgängig machen.`,
+    )
+    if (!confirmed) return
+    setDeleting(true)
+    try {
+      await removeItem(item.id)
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   return (
     <div className="library-card">
-      <Thumbnail item={item} className="library-card__thumb">
+      <Thumbnail item={item} className="library-card__thumb" onClick={() => onPlay(item)}>
         <span className="library-card__duration-badge">{formatDuration(item.duration_seconds)}</span>
       </Thumbnail>
       <div className="library-card__body">
@@ -114,14 +162,72 @@ function LibraryCard({ item, onPlay, knownTags, knownPerformers }: LibraryCardPr
           >
             <DownloadIcon />
           </a>
+          {item.audio_path ? (
+            <a
+              href={itemsApi.audioUrl(item.id)}
+              download
+              aria-label="MP3 herunterladen"
+              title="Fertig umgewandelt - MP3 herunterladen"
+            >
+              <MusicDownloadIcon />
+            </a>
+          ) : (
+            <button
+              className="library-card__icon-btn"
+              aria-label={converting ? 'Wird umgewandelt' : 'Zu MP3 umwandeln'}
+              title={convertError ?? (converting ? 'Wird gerade in MP3 umgewandelt…' : 'Audiospur als MP3 extrahieren')}
+              disabled={converting}
+              onClick={handleConvertAudio}
+            >
+              {converting ? <SpinnerIcon /> : <MusicNoteIcon />}
+            </button>
+          )}
           <button
-            aria-label="Speicherort kopieren"
-            title={item.file_path ?? undefined}
-            onClick={copyPath}
+            className="library-card__icon-btn"
+            aria-label="Dateiinfos"
+            title="Pfad, Qualität und weitere Infos anzeigen"
+            onClick={() => setShowInfo((v) => !v)}
           >
-            {copied ? '✓' : <FolderIcon />}
+            <InfoIcon />
+          </button>
+          <button
+            className="library-card__delete"
+            aria-label="Löschen"
+            title="Video und Datei endgültig löschen"
+            disabled={deleting}
+            onClick={handleDelete}
+          >
+            <TrashIcon />
           </button>
         </div>
+
+        {showInfo && (
+          <div className="library-card__info">
+            <div className="library-card__info-head">
+              <span>Dateiinfos</span>
+              <button className="icon-btn" aria-label="Schließen" onClick={() => setShowInfo(false)}>
+                <CloseIcon size={14} />
+              </button>
+            </div>
+            <dl>
+              <dt>Pfad</dt>
+              <dd>
+                <code title={item.file_path ?? undefined}>{item.file_path ?? '—'}</code>
+                {item.file_path && (
+                  <button className="library-card__info-copy" onClick={copyPath}>
+                    {copied ? 'Kopiert ✓' : 'Kopieren'}
+                  </button>
+                )}
+              </dd>
+              <dt>Qualität</dt>
+              <dd>{item.quality_preset ? (QUALITY_LABELS[item.quality_preset] ?? item.quality_preset) : '—'}</dd>
+              <dt>Größe</dt>
+              <dd>{formatBytes(item.total_bytes)}</dd>
+              <dt>Quelle</dt>
+              <dd>{item.engine === 'ytdlp' ? item.source ?? 'Video' : 'Datei-Download'}</dd>
+            </dl>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -139,6 +245,44 @@ export function Library({ search, onSearchChange }: { search: string; onSearchCh
   // Einschränkungs-Logik, siehe Plan) - bewusst kein persistenter Zustand,
   // damit es nie "versehentlich dauerhaft sichtbar" bleibt.
   const [hideRestricted, setHideRestricted] = useState(true)
+  // Nur das SICHTBARMACHEN eingeschränkter Inhalte braucht eine echte
+  // Passwortbestätigung (Thomas' Wunsch) - das Zurück-Verstecken bleibt ein
+  // einfacher Klick, da es nie etwas zusätzlich offenlegt.
+  const [pendingUnhide, setPendingUnhide] = useState(false)
+  const [unhidePassword, setUnhidePassword] = useState('')
+  const [unhideError, setUnhideError] = useState<string | null>(null)
+
+  function handleHideRestrictedChange(checked: boolean) {
+    if (checked) {
+      setHideRestricted(true)
+      setPendingUnhide(false)
+      return
+    }
+    setPendingUnhide(true)
+    setUnhidePassword('')
+    setUnhideError(null)
+  }
+
+  async function confirmUnhide() {
+    try {
+      const res = await auth.verifyPassword(unhidePassword)
+      if (res.valid) {
+        setHideRestricted(false)
+        setPendingUnhide(false)
+        setUnhidePassword('')
+      } else {
+        setUnhideError('Falsches Passwort.')
+      }
+    } catch {
+      setUnhideError('Prüfung fehlgeschlagen.')
+    }
+  }
+
+  function cancelUnhide() {
+    setPendingUnhide(false)
+    setUnhidePassword('')
+    setUnhideError(null)
+  }
 
   const completed = items.filter((i) => i.status === 'completed')
   const restrictedCount = completed.filter((i) => i.restricted).length
@@ -189,9 +333,27 @@ export function Library({ search, onSearchChange }: { search: string; onSearchCh
         <ToggleSwitch
           label="Eingeschränkte Inhalte ausblenden"
           checked={hideRestricted}
-          onChange={setHideRestricted}
+          onChange={handleHideRestrictedChange}
         />
       </div>
+
+      {pendingUnhide && (
+        <div className="inline-form" style={{ marginBottom: 14 }}>
+          <input
+            type="password"
+            placeholder="Eigenes Passwort zum Sichtbarmachen"
+            value={unhidePassword}
+            onChange={(e) => setUnhidePassword(e.target.value)}
+            autoComplete="current-password"
+            autoFocus
+          />
+          <button onClick={confirmUnhide} disabled={!unhidePassword}>
+            Bestätigen
+          </button>
+          <button onClick={cancelUnhide}>Abbrechen</button>
+          {unhideError && <span className="error-text">{unhideError}</span>}
+        </div>
+      )}
 
       <div className="library-toolbar">
         <input

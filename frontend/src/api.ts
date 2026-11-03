@@ -43,6 +43,26 @@ export const auth = {
       method: 'POST',
       body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
     }),
+  verifyPassword: (password: string) =>
+    request<{ valid: boolean }>('/api/auth/verify-password', {
+      method: 'POST',
+      body: JSON.stringify({ password }),
+    }),
+  listUsers: () => request<{ username: string }[]>('/api/auth/users'),
+  createUser: (currentPassword: string, newUsername: string, newPassword: string) =>
+    request<{ username: string }>('/api/auth/users', {
+      method: 'POST',
+      body: JSON.stringify({
+        current_password: currentPassword,
+        new_username: newUsername,
+        new_password: newPassword,
+      }),
+    }),
+  deleteUser: (targetUsername: string, currentPassword: string) =>
+    request<{ status: string }>(`/api/auth/users/${encodeURIComponent(targetUsername)}`, {
+      method: 'DELETE',
+      body: JSON.stringify({ current_password: currentPassword }),
+    }),
 }
 
 export interface ListItemsParams {
@@ -87,6 +107,8 @@ export const items = {
     }),
   thumbnailUrl: (id: number) => `/api/items/${id}/thumbnail`,
   streamUrl: (id: number) => `/api/items/${id}/stream`,
+  audioUrl: (id: number) => `/api/items/${id}/audio`,
+  convertAudio: (id: number) => request<Item>(`/api/items/${id}/convert-audio`, { method: 'POST' }),
   remove: (id: number) => request<{ status: string }>(`/api/items/${id}`, { method: 'DELETE' }),
 }
 
