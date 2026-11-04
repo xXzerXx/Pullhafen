@@ -29,6 +29,7 @@ from app.services.auth import (
     get_or_create_session_secret,
     list_usernames,
     must_change_password as auth_must_change_password,
+    pending_initial_login_username,
     verify_login,
 )
 from app.services import download_manager as dm
@@ -131,6 +132,14 @@ def login(body: LoginIn, request: Request, db: Session = Depends(get_db)) -> dic
         raise HTTPException(status_code=401, detail="Benutzername oder Passwort falsch.")
     request.session["username"] = body.username
     return {"username": body.username, "must_change_password": auth_must_change_password(db, body.username)}
+
+
+@app.get("/api/auth/pending-initial-login")
+def pending_initial_login(db: Session = Depends(get_db)) -> dict:
+    """Ohne Login abrufbar - die Login-Seite fragt das vor jeder Anmeldung
+    ab, um bei Bedarf "Passwort steht in den Installationslogs" anzuzeigen.
+    Gibt nie ein Passwort zurück, nur ob/für wen das noch offen ist."""
+    return {"pending_username": pending_initial_login_username(db)}
 
 
 @app.post("/api/auth/logout")
@@ -915,6 +924,26 @@ def list_api_tokens(db: Session = Depends(get_db), _: str = Depends(require_logi
 def create_api_token(
     body: ApiTokenIn, db: Session = Depends(get_db), _: str = Depends(require_login)
 ) -> ApiTokenCreateOut:
+    token, raw_token = api_tokens_service.create_token(db, body.label)
+    return ApiTokenCreateOut(id=token.id, label=token.label, created_at=token.created_at.isoformat(), token=raw_token)
+
+
+class ExtensionPairIn(BaseModel):
+    username: str
+    password: str
+    label: str = "Browser-Extension"
+
+
+@app.post("/api/extension/pair", response_model=ApiTokenCreateOut)
+def pair_extension(body: ExtensionPairIn, db: Session = Depends(get_db)) -> ApiTokenCreateOut:
+    """Eigener, ohne Session erreichbarer Endpunkt für die Erweiterungs-
+    Optionsseite: statt erst in den Einstellungen manuell einen Token zu
+    erzeugen und ihn dann in die Erweiterung zu kopieren, gibt man dort
+    einmal den normalen Benutzernamen/Passwort ein - derselbe Login-Check
+    wie /api/auth/login, nur dass hier direkt ein Token zurückkommt statt
+    einer Session."""
+    if not verify_login(db, body.username, body.password):
+        raise HTTPException(status_code=401, detail="Benutzername oder Passwort falsch.")
     token, raw_token = api_tokens_service.create_token(db, body.label)
     return ApiTokenCreateOut(id=token.id, label=token.label, created_at=token.created_at.isoformat(), token=raw_token)
 

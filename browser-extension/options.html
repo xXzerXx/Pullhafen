@@ -44,6 +44,12 @@
         margin-top: 12px;
         font-size: 0.85rem;
       }
+      .hint {
+        margin-top: 16px;
+        font-size: 0.78rem;
+        color: #6b7686;
+        line-height: 1.4;
+      }
     </style>
   </head>
   <body>
@@ -53,11 +59,20 @@
       <input id="backendUrl" placeholder="http://192.168.1.50:8000" />
     </label>
     <label>
-      Token
-      <input id="token" placeholder="pullhafen_…" />
+      Benutzername
+      <input id="username" autocomplete="username" />
     </label>
-    <button id="save">Speichern</button>
+    <label>
+      Passwort
+      <input id="password" type="password" autocomplete="current-password" />
+    </label>
+    <button id="save">Verbinden</button>
     <p id="status"></p>
+    <p class="hint">
+      Dieselben Zugangsdaten wie in der Web-Oberfläche - die Erweiterung
+      erzeugt sich daraus einmalig ihren eigenen Zugangs-Token und merkt
+      sich dein Passwort selbst nicht.
+    </p>
     <script src="options.js"></script>
   </body>
 </html>

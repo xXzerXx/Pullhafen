@@ -1018,6 +1018,16 @@ main {
   font-size: 0.85rem;
   color: var(--text-muted);
 }
+.login-form__hint {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--accent-soft, rgba(232, 163, 61, 0.12));
+  border: 1px solid var(--accent, #e8a33d);
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: var(--text);
+}
 
 /* --- Settings --- */
 

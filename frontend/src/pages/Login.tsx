@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { ApiError, auth } from '../api'
 import { PullhafenGlyph } from '../components/icons'
 
@@ -11,6 +11,14 @@ export function Login({
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [pendingUsername, setPendingUsername] = useState<string | null>(null)
+
+  useEffect(() => {
+    auth
+      .pendingInitialLogin()
+      .then((res) => setPendingUsername(res.pending_username))
+      .catch(() => setPendingUsername(null))
+  }, [])
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -41,6 +49,12 @@ export function Login({
           <h1>Pullhafen</h1>
           <p className="login-form__tagline">Hier legt jeder Download an.</p>
         </div>
+        {pendingUsername && (
+          <p className="login-form__hint">
+            Erste Anmeldung: Benutzername <strong>{pendingUsername}</strong>, das Passwort dazu steht in den
+            Installationslogs des Containers.
+          </p>
+        )}
         <label>
           Benutzername
           <input

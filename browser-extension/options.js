@@ -1,11 +1,14 @@
 const backendUrlInput = document.getElementById("backendUrl");
-const tokenInput = document.getElementById("token");
+const usernameInput = document.getElementById("username");
+const passwordInput = document.getElementById("password");
 const statusEl = document.getElementById("status");
 
 async function load() {
   const { backendUrl, token } = await chrome.storage.local.get(["backendUrl", "token"]);
   if (backendUrl) backendUrlInput.value = backendUrl;
-  if (token) tokenInput.value = token;
+  if (token) {
+    statusEl.textContent = `Bereits verbunden mit ${backendUrl}. Erneut eintragen, um die Verbindung zu wechseln.`;
+  }
 }
 
 function originPatternFor(url) {
@@ -15,11 +18,12 @@ function originPatternFor(url) {
 
 document.getElementById("save").addEventListener("click", async () => {
   const backendUrl = backendUrlInput.value.trim().replace(/\/$/, "");
-  const token = tokenInput.value.trim();
+  const username = usernameInput.value.trim();
+  const password = passwordInput.value;
   statusEl.textContent = "";
 
-  if (!backendUrl || !token) {
-    statusEl.textContent = "Bitte Server-Adresse und Token eintragen.";
+  if (!backendUrl || !username || !password) {
+    statusEl.textContent = "Bitte Server-Adresse, Benutzername und Passwort eintragen.";
     return;
   }
 
@@ -40,8 +44,25 @@ document.getElementById("save").addEventListener("click", async () => {
     return;
   }
 
-  await chrome.storage.local.set({ backendUrl, token });
-  statusEl.textContent = "Gespeichert.";
+  statusEl.textContent = "Verbinde …";
+  try {
+    const res = await fetch(`${backendUrl}/api/extension/pair`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password, label: "Browser-Extension" }),
+    });
+    if (!res.ok) {
+      statusEl.textContent =
+        res.status === 401 ? "Benutzername oder Passwort falsch." : "Server antwortet nicht wie erwartet.";
+      return;
+    }
+    const { token } = await res.json();
+    await chrome.storage.local.set({ backendUrl, token });
+    passwordInput.value = "";
+    statusEl.textContent = "Verbunden.";
+  } catch {
+    statusEl.textContent = "Server nicht erreichbar.";
+  }
 });
 
 load();

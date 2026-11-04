@@ -37,6 +37,7 @@ export const auth = {
       body: JSON.stringify({ username, password }),
     }),
   logout: () => request<{ status: string }>('/api/auth/logout', { method: 'POST' }),
+  pendingInitialLogin: () => request<{ pending_username: string | null }>('/api/auth/pending-initial-login'),
   me: () => request<{ username: string; must_change_password: boolean }>('/api/auth/me'),
   changePassword: (currentPassword: string, newPassword: string) =>
     request<{ status: string }>('/api/auth/change-password', {

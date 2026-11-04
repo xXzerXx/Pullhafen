@@ -34,21 +34,37 @@ def _verify_password(password: str, password_hash: str) -> bool:
         return False
 
 
+DEFAULT_ADMIN_USERNAME = "admin"
+
+
 def bootstrap_admin_if_needed(db: Session) -> None:
-    """Legt beim allerersten Start das Admin-Konto aus den Umgebungsvariablen
-    PULLHAFEN_ADMIN_USERNAME / PULLHAFEN_ADMIN_PASSWORD an. Existiert schon
-    ein Admin-Konto, wird nichts verändert — ein späterer Containerstart mit
-    anderen Env-Vars setzt ein über die Oberfläche geändertes Passwort nicht
-    zurück."""
+    """Legt beim allerersten Start das Admin-Konto an. PULLHAFEN_ADMIN_USERNAME
+    ist optional (Standard "admin", siehe Dockerfile-ENV). Ist
+    PULLHAFEN_ADMIN_PASSWORD nicht gesetzt, wird ein zufälliges Passwort
+    erzeugt und einmalig, gut sichtbar in die Logs geschrieben - damit
+    lässt sich die App ohne jede Pflichteingabe installieren, ohne auf
+    admin:admin oder ein anderes vorhersagbares Passwort zurückzufallen.
+    Existiert schon ein Admin-Konto, wird nichts verändert - ein späterer
+    Containerstart mit anderen Env-Vars setzt ein über die Oberfläche
+    geändertes Passwort nicht zurück."""
     if db.query(AdminUser).first() is not None:
         return
-    username = os.environ.get("PULLHAFEN_ADMIN_USERNAME")
+    username = os.environ.get("PULLHAFEN_ADMIN_USERNAME") or DEFAULT_ADMIN_USERNAME
     password = os.environ.get("PULLHAFEN_ADMIN_PASSWORD")
-    if not username or not password:
-        raise RuntimeError(
-            "Kein Admin-Konto vorhanden und PULLHAFEN_ADMIN_USERNAME/"
-            "PULLHAFEN_ADMIN_PASSWORD sind nicht gesetzt — Erstanmeldung "
-            "unmöglich."
+    generated = not password
+    if generated:
+        password = secrets.token_urlsafe(9)
+        print(
+            "\n"
+            "========================================================\n"
+            "  Pullhafen - Admin-Erstanmeldung\n"
+            f"  Benutzername: {username}\n"
+            f"  Passwort:     {password}\n"
+            "  (zufällig erzeugt, da PULLHAFEN_ADMIN_PASSWORD nicht\n"
+            "  gesetzt war - nach dem ersten Login muss ein eigenes\n"
+            "  Passwort festgelegt werden.)\n"
+            "========================================================\n",
+            flush=True,
         )
     db.add(
         AdminUser(
@@ -68,6 +84,15 @@ _DUMMY_HASH = bcrypt.hashpw(b"dummy", bcrypt.gensalt()).decode("utf-8")
 def must_change_password(db: Session, username: str) -> bool:
     user = db.query(AdminUser).filter(AdminUser.username == username).first()
     return user is not None and user.must_change_password
+
+
+def pending_initial_login_username(db: Session) -> str | None:
+    """Für die Login-Seite, VOR jeder Anmeldung: Name des Kontos, das noch
+    sein Erstanmelde-Passwort trägt (falls eins existiert) - genug, um auf
+    der Login-Seite den Hinweis "Passwort steht in den Logs" einzublenden,
+    ohne selbst irgendetwas Geheimes preiszugeben."""
+    user = db.query(AdminUser).filter(AdminUser.must_change_password.is_(True)).first()
+    return user.username if user is not None else None
 
 
 def verify_login(db: Session, username: str, password: str) -> bool:

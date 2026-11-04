@@ -4,11 +4,19 @@ from typing import Awaitable, Callable
 from urllib.parse import urlsplit
 
 import httpx
+from yt_dlp.utils.networking import std_headers
 
 ProgressCallback = Callable[[int, int | None], Awaitable[None]]
 OnStartCallback = Callable[[Path, int | None], Awaitable[None]]
 
 CHUNK_SIZE = 65536
+
+# Ohne eigene Header schickt httpx seine eigene "python-httpx/x.y"-
+# Kennung - viele Seiten antworten darauf anders (403, gedrosselt, oder
+# eine abgespeckte Variante der Seite) als auf einen echten Browser.
+# yt-dlps eigene, laufend aktuell gehaltene Browser-Kennung wiederverwenden
+# statt selbst eine zu pflegen, die sonst mit der Zeit veraltet.
+DEFAULT_HEADERS = dict(std_headers)
 
 
 def domain_folder(url: str) -> str:
@@ -65,7 +73,7 @@ async def download_to_directory(
     der Server den Range-Header (kein 206), wird stattdessen ehrlich von
     Null neu geschrieben, statt den vollen Inhalt an die Teildatei
     anzuhängen und sie zu korrumpieren."""
-    headers = {}
+    headers = dict(DEFAULT_HEADERS)
     if resume_from > 0 and dest_path is not None:
         headers["Range"] = f"bytes={resume_from}-"
 

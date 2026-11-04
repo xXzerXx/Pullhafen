@@ -45,6 +45,13 @@ COPY --from=frontend-build /app/backend/app/static ./app/static
 ENV PULLHAFEN_DATA_DIR=/appdata/data
 ENV PULLHAFEN_DOWNLOADS_DIR=/appdata/downloads
 
+# Admin-Erstanmeldung ganz ohne Pflichteingabe beim Installieren: der
+# Benutzername hat einen festen Standard, und wenn PULLHAFEN_ADMIN_PASSWORD
+# nicht gesetzt wird, erzeugt bootstrap_admin_if_needed() selbst eines und
+# schreibt es einmalig und gut sichtbar in die Container-Logs (siehe
+# app/services/auth.py) - kein Rätselraten, kein admin:admin-Risiko.
+ENV PULLHAFEN_ADMIN_USERNAME=admin
+
 EXPOSE 8000
 
 # Migrationen laufen bei jedem Start - idempotent (alembic macht nichts,
