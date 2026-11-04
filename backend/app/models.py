@@ -138,6 +138,18 @@ class RestrictedDomain(Base):
     domain: Mapped[str] = mapped_column(String, nullable=False, unique=True)
 
 
+class SiteCookie(Base):
+    """Einmal für eine Domain hinterlegter Cookie-String (siehe
+    Item.cookies, needs_cookies) gilt automatisch für JEDEN künftigen Link
+    von derselben Domain - ohne das würde man denselben Cookie bei jedem
+    weiteren Video von der gleichen Seite erneut eintragen müssen."""
+
+    __tablename__ = "site_cookies"
+
+    domain: Mapped[str] = mapped_column(String, primary_key=True)
+    cookies: Mapped[str] = mapped_column(String, nullable=False)
+
+
 class ApiToken(Base):
     """Bearer-Token für die Browser-Extension (Stufe 12) - bewusst getrennt
     vom Session-Cookie-Login, da eine Extension keine Browser-Session hat.

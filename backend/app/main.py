@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from app.config import STATIC_DIR
 from app.version import PULLHAFEN_VERSION
 from app.database import SessionLocal, get_db
-from app.models import ApiToken, Item, Performer, RestrictedDomain, Tag
+from app.models import ApiToken, Item, Performer, RestrictedDomain, SiteCookie, Tag
 from app.services import api_tokens as api_tokens_service
 from app.services import audio_extract as audio_extract_service
 from app.services import thumbnails as thumbnails_service
@@ -420,6 +420,26 @@ def _same_host_and_port(url: str, own_host: str) -> bool:
     return port_a == port_b
 
 
+def _get_site_cookies(db: Session, url: str) -> str | None:
+    domain = urlsplit(url).hostname
+    if not domain:
+        return None
+    row = db.get(SiteCookie, domain)
+    return row.cookies if row is not None else None
+
+
+def _set_site_cookies(db: Session, url: str, cookies: str) -> None:
+    domain = urlsplit(url).hostname
+    if not domain:
+        return
+    row = db.get(SiteCookie, domain)
+    if row is None:
+        db.add(SiteCookie(domain=domain, cookies=cookies))
+    else:
+        row.cookies = cookies
+    db.commit()
+
+
 async def _create_link_item(
     url: str, db: Session, own_host: str | None = None, cookies: str | None = None
 ) -> ItemOut:
@@ -444,6 +464,13 @@ async def _create_link_item(
     if existing is not None:
         domains, threshold = _restricted_context(db)
         return ItemOut.from_item(existing, domains, threshold, already_existed=True)
+
+    # Kein explizit mitgegebener Cookie (z.B. von der Extension) -> schauen,
+    # ob für diese Domain schon einmal einer hinterlegt wurde (siehe
+    # /api/items/{id}/cookies). So braucht jedes weitere Video von einer
+    # schon bekannten Seite den Cookie nicht erneut von Hand.
+    if cookies is None:
+        cookies = _get_site_cookies(db, url)
 
     # Echter yt-dlp-Trockenlauf entscheidet: erkanntes Video -> ytdlp-Engine,
     # keine Seite zuständig -> generischer httpx-Download, bekannte Seite
@@ -781,7 +808,9 @@ async def set_item_cookies_and_retry(
     Cookie braucht (siehe needs_cookies in ItemOut): speichert den
     eingegebenen Cookie-String am Item und startet denselben Download
     sofort neu damit - derselbe Mechanismus wie /restart, nur mit dem
-    zusätzlichen Schritt davor."""
+    zusätzlichen Schritt davor. Merkt sich den Cookie zusätzlich pro Domain
+    (siehe _set_site_cookies), damit jedes künftige Video von derselben
+    Seite ihn automatisch von Anfang an mitbekommt."""
     item = db.get(Item, item_id)
     if item is None:
         raise HTTPException(status_code=404, detail="Nicht gefunden.")
@@ -792,6 +821,7 @@ async def set_item_cookies_and_retry(
     item.cookies = body.cookies
     item.hidden_from_downloads = False
     db.commit()
+    _set_site_cookies(db, item.url, body.cookies)
     if item.engine == "http":
         dm.queue_generic_download(item.id, restart=True)
     else:
