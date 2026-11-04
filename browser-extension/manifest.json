@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "description": "Links per Rechtsklick oder Symbolleisten-Button direkt an den eigenen Pullhafen-Downloadmanager senden.",
   "permissions": ["contextMenus", "storage", "activeTab", "clipboardRead"],
+  "optional_permissions": ["cookies"],
   "optional_host_permissions": ["http://*/*", "https://*/*"],
   "background": {
     "service_worker": "background.js"

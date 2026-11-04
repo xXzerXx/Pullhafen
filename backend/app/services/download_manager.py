@@ -188,6 +188,7 @@ async def run_generic_download(item_id: int, *, restart: bool = False) -> None:
                 resume_from=resume_from,
                 on_start=on_start,
                 progress_cb=on_progress,
+                cookies=item.cookies,
             )
         except asyncio.CancelledError:
             item.status = "paused"
@@ -290,6 +291,7 @@ async def run_ytdlp_download(item_id: int, *, restart: bool = False) -> None:
                 progress_hook,
                 force_restart=restart,
                 quality_preset=quality,
+                cookies=item.cookies,
             )
         except asyncio.CancelledError:
             item.status = "paused"

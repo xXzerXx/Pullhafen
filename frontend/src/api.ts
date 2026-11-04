@@ -93,6 +93,8 @@ export const items = {
   pause: (id: number) => request<Item>(`/api/items/${id}/pause`, { method: 'POST' }),
   resume: (id: number) => request<Item>(`/api/items/${id}/resume`, { method: 'POST' }),
   restart: (id: number) => request<Item>(`/api/items/${id}/restart`, { method: 'POST' }),
+  setCookiesAndRetry: (id: number, cookies: string) =>
+    request<Item>(`/api/items/${id}/cookies`, { method: 'POST', body: JSON.stringify({ cookies }) }),
   start: (id: number) => request<Item>(`/api/items/${id}/start`, { method: 'POST' }),
   setTags: (id: number, tags: string[]) =>
     request<Item>(`/api/items/${id}/tags`, { method: 'PUT', body: JSON.stringify({ tags }) }),

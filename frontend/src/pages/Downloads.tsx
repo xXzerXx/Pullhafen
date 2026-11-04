@@ -1,12 +1,59 @@
-import { useState } from 'react'
-import { downloads, items as itemsApi } from '../api'
+import { useState, type FormEvent } from 'react'
+import { ApiError, downloads, items as itemsApi } from '../api'
 import { useItems } from '../ItemsContext'
 import { useSelection } from '../useSelection'
+import type { Item } from '../types'
 import { Thumbnail } from '../components/Thumbnail'
 import { BulkBar } from '../components/BulkBar'
 import { PlayIcon, PauseIcon, CloseIcon } from '../components/icons'
 import { formatBytes, formatEta, formatSpeed } from '../format'
 import { useDownloadSpeeds } from '../useDownloadSpeeds'
+
+function CookieRetryForm({ item, onRetried }: { item: Item; onRetried: () => void }) {
+  const [value, setValue] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault()
+    const trimmed = value.trim()
+    if (!trimmed) return
+    setBusy(true)
+    setError(null)
+    try {
+      await itemsApi.setCookiesAndRetry(item.id, trimmed)
+      setValue('')
+      onRetried()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Fehlgeschlagen.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <form className="cookie-retry" onSubmit={handleSubmit}>
+      <p className="cookie-retry__hint">
+        Diese Seite verlangt vermutlich einen Login oder eine Altersbestätigung per Cookie.
+        {item.has_cookies
+          ? ' Der zuletzt hinterlegte Cookie hat nicht gereicht - neuen eintragen:'
+          : ' Cookie-Wert aus den Browser-Entwicklertools der Seite eintragen (name1=wert1; name2=wert2):'}
+      </p>
+      <div className="cookie-retry__row">
+        <input
+          type="text"
+          placeholder="name1=wert1; name2=wert2"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+        />
+        <button type="submit" disabled={busy || !value.trim()}>
+          Übernehmen &amp; erneut versuchen
+        </button>
+      </div>
+      {error && <p className="error-text">{error}</p>}
+    </form>
+  )
+}
 
 export function Downloads() {
   const { items, reload, removeItem, removeItems } = useItems()
@@ -159,7 +206,10 @@ export function Downloads() {
                 </div>
 
                 {item.status === 'failed' && item.error_message ? (
-                  <div className="download-card__error">{item.error_message}</div>
+                  <>
+                    <div className="download-card__error">{item.error_message}</div>
+                    {item.needs_cookies && <CookieRetryForm item={item} onRetried={reload} />}
+                  </>
                 ) : (
                   <div className="download-card__progress">
                     <div className="download-card__bar-track">

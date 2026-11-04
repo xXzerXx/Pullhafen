@@ -1,6 +1,7 @@
 import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
@@ -284,6 +285,40 @@ def set_downloads_root(
 
 class LinkIn(BaseModel):
     url: str
+    # Nur von der Browser-Extension genutzt (siehe background.js) - wenn sie
+    # beim Senden schon Cookies für die Ziel-Domain mitschickt, muss die
+    # Seite nicht erst scheitern, bevor man die Zugangsdaten nachträgt.
+    cookies: str | None = None
+
+
+# Reine Texterkennung auf der Fehlermeldung - keine Garantie, nur ein
+# brauchbarer Hinweis für den häufigsten Fall (Login/Altersbestätigung
+# per Cookie). Bewusst eine flache Liste von Teilstrings statt irgendeiner
+# Klassifizierungs-Logik, leicht erweiterbar, wenn ein echter Fall auftaucht,
+# den das hier noch nicht erkennt.
+_NEEDS_COOKIES_HINTS = (
+    "sign in",
+    "log in",
+    "anmelden",
+    "einloggen",
+    "cookies",
+    "age-restricted",
+    "age restricted",
+    "confirm your age",
+    "altersbestätigung",
+    "private video",
+    "members only",
+    "members-only",
+    "subscriber",
+    "registrier",
+)
+
+
+def _needs_cookies(error_message: str | None) -> bool:
+    if not error_message:
+        return False
+    lowered = error_message.lower()
+    return any(hint in lowered for hint in _NEEDS_COOKIES_HINTS)
 
 
 class ItemOut(BaseModel):
@@ -313,6 +348,14 @@ class ItemOut(BaseModel):
     # True heißt: dieser Link existierte schon, es wurde NICHTS neu angelegt,
     # das zurückgegebene Item ist der bereits vorhandene Eintrag.
     already_existed: bool = False
+    # Ob für diese URL schon ein Cookie-String hinterlegt ist (der Wert
+    # selbst geht nie ans Frontend - einmal gesetzt, bleibt er geheim,
+    # genau wie ein Passwort).
+    has_cookies: bool = False
+    # Reine Texterkennung auf error_message (siehe _needs_cookies) - zeigt
+    # dem Frontend an, wann sich das Cookie-Eingabefeld statt nur der
+    # rohen Fehlermeldung anbietet.
+    needs_cookies: bool = False
 
     @classmethod
     def from_item(
@@ -348,6 +391,8 @@ class ItemOut(BaseModel):
             ),
             hidden_from_downloads=item.hidden_from_downloads,
             already_existed=already_existed,
+            has_cookies=bool(item.cookies),
+            needs_cookies=_needs_cookies(item.error_message),
         )
 
 
@@ -358,11 +403,39 @@ def _restricted_context(db: Session) -> tuple[set[str], int]:
     )
 
 
-async def _create_link_item(url: str, db: Session) -> ItemOut:
+_DEFAULT_PORTS = {"http": 80, "https": 443}
+
+
+def _same_host_and_port(url: str, own_host: str) -> bool:
+    """Hostname ALLEIN reicht nicht - 127.0.0.1:8899 (ein anderer Dienst auf
+    derselben Maschine/IP) ist ein echter Fund gewesen, der sonst fälschlich
+    als 'Pullhafen selbst' blockiert worden wäre. Vergleicht darum Host UND
+    Port, mit dem schemaspezifischen Standardport, wenn keiner angegeben
+    ist (http -> 80, https -> 443)."""
+    a, b = urlsplit(url), urlsplit(own_host)
+    if a.hostname != b.hostname:
+        return False
+    port_a = a.port or _DEFAULT_PORTS.get(a.scheme)
+    port_b = b.port or _DEFAULT_PORTS.get(b.scheme)
+    return port_a == port_b
+
+
+async def _create_link_item(
+    url: str, db: Session, own_host: str | None = None, cookies: str | None = None
+) -> ItemOut:
     """Gemeinsame Logik für /api/links (Session-Auth) und
     /api/extension/links (Bearer-Token) - derselbe Trockenlauf, dieselbe
     Engine-Entscheidung, derselbe WS-Broadcast, nur der Auth-Pfad
     unterscheidet sich zwischen den beiden Endpunkten."""
+    # Pullhafen kann sich sonst selbst als Download-Ziel eintragen, wenn
+    # man versehentlich die eigene Adresse einfügt (real passiert) - der
+    # generische Downloader würde dann einfach die eigene Login-/
+    # Dashboard-Seite als Datei herunterladen, statt einen Fehler zu zeigen.
+    if own_host is not None and _same_host_and_port(url, own_host):
+        raise HTTPException(
+            status_code=400,
+            detail="Das ist die Adresse von Pullhafen selbst - die lässt sich nicht als Download hinzufügen.",
+        )
     # Exakt dieselbe URL schon vorhanden (egal welcher Status) - nicht
     # nochmal klassifizieren/anlegen, sondern den bestehenden Eintrag mit
     # already_existed=True zurückgeben, damit das Frontend "schon vorhanden"
@@ -382,13 +455,14 @@ async def _create_link_item(url: str, db: Session) -> ItemOut:
         # trotzdem mal länger hängt (echt beobachtet: eine von YouTube
         # ratenlimitierte Session ließ eine einzelne Anfrage >13 Minuten
         # laufen, mit einem ausgegrauten Button und ohne jede Rückmeldung).
-        info = await asyncio.wait_for(asyncio.to_thread(ytdlp_engine.classify, url), timeout=30)
+        info = await asyncio.wait_for(asyncio.to_thread(ytdlp_engine.classify, url, cookies), timeout=30)
     except asyncio.TimeoutError:
         item = Item(
             url=url,
             engine="ytdlp",
             status="failed",
             error_message="Zeitüberschreitung beim Prüfen des Links (z.B. durch Ratenlimit der Seite) - bitte später erneut versuchen.",
+            cookies=cookies,
         )
         db.add(item)
         db.commit()
@@ -398,7 +472,7 @@ async def _create_link_item(url: str, db: Session) -> ItemOut:
         await ws_manager.broadcast({"type": "item_update", "item": out.model_dump()})
         return out
     except ytdlp_engine.VideoUnavailableError as exc:
-        item = Item(url=url, engine="ytdlp", status="failed", error_message=str(exc))
+        item = Item(url=url, engine="ytdlp", status="failed", error_message=str(exc), cookies=cookies)
         db.add(item)
         db.commit()
         db.refresh(item)
@@ -419,6 +493,7 @@ async def _create_link_item(url: str, db: Session) -> ItemOut:
             duration_seconds=round(duration) if isinstance(duration, (int, float)) else None,
             title=info.get("title"),
             channel=info.get("channel") or info.get("uploader"),
+            cookies=cookies,
         )
         db.add(item)
         db.commit()
@@ -436,7 +511,7 @@ async def _create_link_item(url: str, db: Session) -> ItemOut:
         if autostart:
             dm.queue_ytdlp_download(item.id)
     else:
-        item = Item(url=url, engine="http", status="queued")
+        item = Item(url=url, engine="http", status="queued", cookies=cookies)
         db.add(item)
         db.commit()
         db.refresh(item)
@@ -450,16 +525,16 @@ async def _create_link_item(url: str, db: Session) -> ItemOut:
 
 @app.post("/api/links", response_model=ItemOut)
 async def add_link(
-    body: LinkIn, db: Session = Depends(get_db), _: str = Depends(require_login)
+    body: LinkIn, request: Request, db: Session = Depends(get_db), _: str = Depends(require_login)
 ) -> ItemOut:
-    return await _create_link_item(body.url, db)
+    return await _create_link_item(body.url, db, own_host=str(request.base_url), cookies=body.cookies)
 
 
 @app.post("/api/extension/links", response_model=ItemOut)
 async def add_extension_link(
-    body: LinkIn, db: Session = Depends(get_db), _: ApiToken = Depends(require_api_token)
+    body: LinkIn, request: Request, db: Session = Depends(get_db), _: ApiToken = Depends(require_api_token)
 ) -> ItemOut:
-    return await _create_link_item(body.url, db)
+    return await _create_link_item(body.url, db, own_host=str(request.base_url), cookies=body.cookies)
 
 
 @app.get("/api/items/{item_id}", response_model=ItemOut)
@@ -684,6 +759,37 @@ async def restart_item(item_id: int, db: Session = Depends(get_db), _: str = Dep
         raise HTTPException(status_code=400, detail="Dieser Status kann nicht neu gestartet werden.")
     if dm.is_active(item.id):
         raise HTTPException(status_code=409, detail="Download läuft gerade - zuerst pausieren.")
+    item.hidden_from_downloads = False
+    db.commit()
+    if item.engine == "http":
+        dm.queue_generic_download(item.id, restart=True)
+    else:
+        dm.queue_ytdlp_download(item.id, restart=True)
+    domains, threshold = _restricted_context(db)
+    return ItemOut.from_item(item, domains, threshold)
+
+
+class ItemCookiesIn(BaseModel):
+    cookies: str
+
+
+@app.post("/api/items/{item_id}/cookies", response_model=ItemOut)
+async def set_item_cookies_and_retry(
+    item_id: int, body: ItemCookiesIn, db: Session = Depends(get_db), _: str = Depends(require_login)
+) -> ItemOut:
+    """Für den Fall, dass eine Seite nur eine Login-/Altersbestätigung per
+    Cookie braucht (siehe needs_cookies in ItemOut): speichert den
+    eingegebenen Cookie-String am Item und startet denselben Download
+    sofort neu damit - derselbe Mechanismus wie /restart, nur mit dem
+    zusätzlichen Schritt davor."""
+    item = db.get(Item, item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Nicht gefunden.")
+    if item.status not in ("paused", "failed", "completed"):
+        raise HTTPException(status_code=400, detail="Dieser Status kann nicht neu gestartet werden.")
+    if dm.is_active(item.id):
+        raise HTTPException(status_code=409, detail="Download läuft gerade - zuerst pausieren.")
+    item.cookies = body.cookies
     item.hidden_from_downloads = False
     db.commit()
     if item.engine == "http":

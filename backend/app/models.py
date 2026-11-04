@@ -91,6 +91,14 @@ class Item(Base):
     # "Aufräumen" geklickt wird oder "automatisch entfernen" aktiv ist. Die
     # Bibliothek ignoriert dieses Feld komplett, nichts verschwindet dort je.
     hidden_from_downloads: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Roher "name1=value1; name2=value2"-Cookie-String für genau diese URL -
+    # für Seiten, die nur einen Login/eine Altersbestätigung per Cookie
+    # verlangen. Wird yt-dlp/der generischen Engine als http_headers-Cookie
+    # mitgegeben (yt-dlp scoped das selbst automatisch auf die Domain der
+    # jeweiligen URL, siehe YoutubeDL._apply_header_cookies). Kommt entweder
+    # vom Nutzer per Hand (siehe needs_cookies-Hinweis) oder automatisch von
+    # der Browser-Extension mit, wenn die das beim Senden schon mitschickt.
+    cookies: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, nullable=False, default=datetime.datetime.utcnow
     )

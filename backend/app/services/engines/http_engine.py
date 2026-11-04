@@ -65,6 +65,7 @@ async def download_to_directory(
     resume_from: int = 0,
     on_start: OnStartCallback | None = None,
     progress_cb: ProgressCallback | None = None,
+    cookies: str | None = None,
 ) -> DownloadResult:
     """Lädt `url` komplett herunter. Ohne `dest_path` wird ein neuer,
     kollisionsfreier Dateiname in `directory` gewählt (erster Download).
@@ -72,8 +73,12 @@ async def download_to_directory(
     Teildatei per Range-Header fortzusetzen (Pause/Resume, Stufe 6) — ignoriert
     der Server den Range-Header (kein 206), wird stattdessen ehrlich von
     Null neu geschrieben, statt den vollen Inhalt an die Teildatei
-    anzuhängen und sie zu korrumpieren."""
+    anzuhängen und sie zu korrumpieren. `cookies` ist ein roher
+    "name=value; name2=value2"-String für Seiten, die nur eine per Cookie
+    gesetzte Login-/Altersbestätigung verlangen (siehe Item.cookies)."""
     headers = dict(DEFAULT_HEADERS)
+    if cookies:
+        headers["Cookie"] = cookies
     if resume_from > 0 and dest_path is not None:
         headers["Range"] = f"bytes={resume_from}-"
 

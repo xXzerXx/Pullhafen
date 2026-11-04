@@ -29,19 +29,38 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 // Tests den exakt gleichen Code direkt im Service-Worker aufrufen können,
 // ohne ein natives Kontextmenü simulieren zu müssen - echtes Rechtsklick-UI
 // ist von außerhalb des Browsers selbst nicht automatisierbar.
+// Liest die Cookies der Ziel-Domain selbst (nicht von Pullhafen) - nur
+// wenn forwardCookies aktiv UND die Berechtigung dafür wirklich erteilt
+// ist (kann z.B. nachträglich in den Browser-Einstellungen entzogen
+// worden sein, ohne dass das gespeicherte Häkchen das merkt). Scheitert
+// das aus irgendeinem Grund, wird der Link trotzdem ohne Cookies gesendet
+// statt das Senden ganz abzubrechen.
+async function cookieHeaderFor(url) {
+  try {
+    const { forwardCookies } = await chrome.storage.local.get(["forwardCookies"]);
+    if (!forwardCookies) return null;
+    const cookies = await chrome.cookies.getAll({ url });
+    if (!cookies.length) return null;
+    return cookies.map((c) => `${c.name}=${c.value}`).join("; ");
+  } catch {
+    return null;
+  }
+}
+
 async function handleAddLink(url) {
   const { backendUrl, token } = await chrome.storage.local.get(["backendUrl", "token"]);
   if (!backendUrl || !token) {
     return { ok: false, reason: "no-config" };
   }
   try {
+    const cookies = await cookieHeaderFor(url);
     const res = await fetch(`${backendUrl.replace(/\/$/, "")}/api/extension/links`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ url }),
+      body: JSON.stringify(cookies ? { url, cookies } : { url }),
     });
     if (!res.ok) return { ok: false, reason: "server" };
     const item = await res.json().catch(() => null);

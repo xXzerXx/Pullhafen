@@ -26,6 +26,12 @@ export interface Item {
   created_at: string
   /** Nur in der Antwort von addLink() relevant - siehe AddLinkPanel. */
   already_existed?: boolean
+  /** Ob für diese URL schon ein Cookie-String hinterlegt ist (der Wert
+   * selbst wird nie ans Frontend geschickt). */
+  has_cookies: boolean
+  /** Texterkennung auf error_message - zeigt an, wann sich das
+   * Cookie-Eingabefeld statt nur der rohen Fehlermeldung anbietet. */
+  needs_cookies: boolean
 }
 
 export interface AppSettings {

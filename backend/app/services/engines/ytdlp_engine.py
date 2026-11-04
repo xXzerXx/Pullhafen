@@ -47,6 +47,15 @@ def _base_opts() -> dict:
     }
 
 
+def _cookie_opts(cookies: str | None) -> dict:
+    """yt-dlp scoped einen per http_headers übergebenen Cookie-String selbst
+    automatisch auf die Domain der jeweils extrahierten URL (siehe
+    YoutubeDL._apply_header_cookies, läuft bei jedem extract_info()-Aufruf) -
+    kein eigenes Cookie-Jar/-File nötig für den einfachen Fall "eine
+    Alters-/Login-Bestätigung per Cookie", um den es hier geht."""
+    return {"http_headers": {"Cookie": cookies}} if cookies else {}
+
+
 def _matches_specific_extractor(url: str) -> bool:
     """Rein offline: passt irgendein site-spezifischer Extractor (nicht der
     generische Catch-All) zur URL? Entscheidet, ob ein Extraktionsfehler
@@ -62,7 +71,7 @@ def _matches_specific_extractor(url: str) -> bool:
     return False
 
 
-def classify(url: str) -> dict | None:
+def classify(url: str, cookies: str | None = None) -> dict | None:
     """Gibt das Info-Dict zurück, wenn yt-dlp die URL als Video erkennt,
     None, wenn keine Seite zuständig ist (-> generischer httpx-Download),
     oder wirft VideoUnavailableError, wenn eine bekannte Video-Seite
@@ -78,6 +87,7 @@ def classify(url: str) -> dict | None:
         return None
     opts = {
         **_base_opts(),
+        **_cookie_opts(cookies),
         "skip_download": True,
         # Echter Fund: ohne das kann ein einzelner problematischer Link
         # (z.B. eine von YouTube ratenlimitierte Session bei einem Mix-/
@@ -129,6 +139,7 @@ def download_sync(
     *,
     force_restart: bool = False,
     quality_preset: str = DEFAULT_QUALITY_PRESET,
+    cookies: str | None = None,
 ) -> DownloadResult:
     """Läuft blockierend (via asyncio.to_thread aus dem Aufrufer). Echte
     Metadaten/Vorschaubild-Postprocessors, daher wird ffmpeg gebraucht —
@@ -155,6 +166,7 @@ def download_sync(
         postprocessors.insert(0, {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"})
     opts = {
         **_base_opts(),
+        **_cookie_opts(cookies),
         "outtmpl": outtmpl,
         "format": format_selector,
         "merge_output_format": merge_format,

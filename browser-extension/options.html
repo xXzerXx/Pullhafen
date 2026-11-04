@@ -50,6 +50,20 @@
         color: #6b7686;
         line-height: 1.4;
       }
+      .checkbox-row {
+        display: flex;
+        flex-direction: row;
+        align-items: flex-start;
+        gap: 8px;
+        margin: 18px 0 14px;
+        font-size: 0.82rem;
+        color: #b7c0cf;
+      }
+      .checkbox-row input {
+        margin: 2px 0 0;
+        width: auto;
+        flex: none;
+      }
     </style>
   </head>
   <body>
@@ -65,6 +79,14 @@
     <label>
       Passwort
       <input id="password" type="password" autocomplete="current-password" />
+    </label>
+    <label class="checkbox-row">
+      <input id="forwardCookies" type="checkbox" />
+      <span
+        >Cookies der Ziel-Seite automatisch mitschicken (z.B. für eine Alters-/Login-Bestätigung, die du dort
+        schon einmal bestätigt hast). Fragt beim Speichern einmal nach einer Erlaubnis, auf alle Websites
+        zuzugreifen.</span
+      >
     </label>
     <button id="save">Verbinden</button>
     <p id="status"></p>

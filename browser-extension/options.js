@@ -1,11 +1,17 @@
 const backendUrlInput = document.getElementById("backendUrl");
 const usernameInput = document.getElementById("username");
 const passwordInput = document.getElementById("password");
+const forwardCookiesInput = document.getElementById("forwardCookies");
 const statusEl = document.getElementById("status");
 
 async function load() {
-  const { backendUrl, token } = await chrome.storage.local.get(["backendUrl", "token"]);
+  const { backendUrl, token, forwardCookies } = await chrome.storage.local.get([
+    "backendUrl",
+    "token",
+    "forwardCookies",
+  ]);
   if (backendUrl) backendUrlInput.value = backendUrl;
+  forwardCookiesInput.checked = forwardCookies === true;
   if (token) {
     statusEl.textContent = `Bereits verbunden mit ${backendUrl}. Erneut eintragen, um die Verbindung zu wechseln.`;
   }
@@ -44,6 +50,22 @@ document.getElementById("save").addEventListener("click", async () => {
     return;
   }
 
+  const forwardCookies = forwardCookiesInput.checked;
+  if (forwardCookies) {
+    // Separate, bewusst breitere Erlaubnis - nur wenn das Häkchen gesetzt
+    // ist, denn das erlaubt dem Hintergrundskript, Cookies auf JEDER Seite
+    // zu lesen (nicht nur beim eigenen Pullhafen-Server), um sie beim
+    // Senden eines Links mitzugeben.
+    const cookiesGranted = await chrome.permissions.request({
+      permissions: ["cookies"],
+      origins: ["http://*/*", "https://*/*"],
+    });
+    if (!cookiesGranted) {
+      statusEl.textContent = "Ohne diese Erlaubnis kann Pullhafen keine Cookies mitschicken - Häkchen entfernt.";
+      forwardCookiesInput.checked = false;
+    }
+  }
+
   statusEl.textContent = "Verbinde …";
   try {
     const res = await fetch(`${backendUrl}/api/extension/pair`, {
@@ -57,7 +79,7 @@ document.getElementById("save").addEventListener("click", async () => {
       return;
     }
     const { token } = await res.json();
-    await chrome.storage.local.set({ backendUrl, token });
+    await chrome.storage.local.set({ backendUrl, token, forwardCookies: forwardCookiesInput.checked });
     passwordInput.value = "";
     statusEl.textContent = "Verbunden.";
   } catch {
