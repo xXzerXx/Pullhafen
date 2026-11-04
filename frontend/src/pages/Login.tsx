@@ -2,7 +2,11 @@ import { useState, type FormEvent } from 'react'
 import { ApiError, auth } from '../api'
 import { PullhafenGlyph } from '../components/icons'
 
-export function Login({ onLoggedIn }: { onLoggedIn: (username: string) => void }) {
+export function Login({
+  onLoggedIn,
+}: {
+  onLoggedIn: (res: { username: string; must_change_password: boolean }) => void
+}) {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -14,7 +18,7 @@ export function Login({ onLoggedIn }: { onLoggedIn: (username: string) => void }
     setError(null)
     try {
       const res = await auth.login(username, password)
-      onLoggedIn(res.username)
+      onLoggedIn(res)
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Anmeldung fehlgeschlagen.')
     } finally {

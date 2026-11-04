@@ -37,8 +37,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/ .
 COPY --from=frontend-build /app/backend/app/static ./app/static
 
-ENV PULLHAFEN_DATA_DIR=/data
-ENV PULLHAFEN_DOWNLOADS_DIR=/downloads
+# Beide unter einem gemeinsamen Elternordner als Standard - ein einziger
+# Host-Mount auf /appdata reicht dann für die Einrichtung, Pullhafen legt
+# data/ und downloads/ darin selbst an (siehe database.py/engines). Wer
+# Downloads auf einem eigenen, größeren Dataset haben will, überschreibt
+# einfach nur PULLHAFEN_DOWNLOADS_DIR separat.
+ENV PULLHAFEN_DATA_DIR=/appdata/data
+ENV PULLHAFEN_DOWNLOADS_DIR=/appdata/downloads
 
 EXPOSE 8000
 

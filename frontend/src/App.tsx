@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { auth } from './api'
 import { ItemsProvider } from './ItemsContext'
 import { Login } from './pages/Login'
+import { ForcedPasswordChange } from './pages/ForcedPasswordChange'
 import { Queue } from './pages/Queue'
 import { Downloads } from './pages/Downloads'
 import { Library } from './pages/Library'
@@ -141,17 +142,29 @@ function AppShell({ username, onLoggedOut }: { username: string; onLoggedOut: ()
 
 export function App() {
   const [username, setUsername] = useState<string | null>(null)
+  const [mustChangePassword, setMustChangePassword] = useState(false)
   const [checking, setChecking] = useState(true)
 
   useEffect(() => {
     auth
       .me()
-      .then((res) => setUsername(res.username))
+      .then((res) => {
+        setUsername(res.username)
+        setMustChangePassword(res.must_change_password)
+      })
       .catch(() => setUsername(null))
       .finally(() => setChecking(false))
   }, [])
 
+  function handleLoggedIn(res: { username: string; must_change_password: boolean }) {
+    setUsername(res.username)
+    setMustChangePassword(res.must_change_password)
+  }
+
   if (checking) return <div className="page">Lädt…</div>
-  if (!username) return <Login onLoggedIn={setUsername} />
+  if (!username) return <Login onLoggedIn={handleLoggedIn} />
+  if (mustChangePassword) {
+    return <ForcedPasswordChange username={username} onChanged={() => setMustChangePassword(false)} />
+  }
   return <AppShell username={username} onLoggedOut={() => setUsername(null)} />
 }

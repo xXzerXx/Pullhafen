@@ -50,13 +50,24 @@ def bootstrap_admin_if_needed(db: Session) -> None:
             "PULLHAFEN_ADMIN_PASSWORD sind nicht gesetzt — Erstanmeldung "
             "unmöglich."
         )
-    db.add(AdminUser(username=username, password_hash=_hash_password(password)))
+    db.add(
+        AdminUser(
+            username=username,
+            password_hash=_hash_password(password),
+            must_change_password=True,
+        )
+    )
     db.commit()
 
 
 # Fixer Dummy-Hash für den Username-nicht-gefunden-Fall, damit die
 # Antwortzeit nicht verrät, ob der Benutzername existiert.
 _DUMMY_HASH = bcrypt.hashpw(b"dummy", bcrypt.gensalt()).decode("utf-8")
+
+
+def must_change_password(db: Session, username: str) -> bool:
+    user = db.query(AdminUser).filter(AdminUser.username == username).first()
+    return user is not None and user.must_change_password
 
 
 def verify_login(db: Session, username: str, password: str) -> bool:
@@ -88,6 +99,7 @@ def change_password(db: Session, username: str, current_password: str, new_passw
     if user is None or not _verify_password(current_password, user.password_hash):
         raise WrongPasswordError("Aktuelles Passwort ist falsch.")
     user.password_hash = _hash_password(new_password)
+    user.must_change_password = False
     db.commit()
 
 

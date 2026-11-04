@@ -28,6 +28,7 @@ from app.services.auth import (
     delete_user,
     get_or_create_session_secret,
     list_usernames,
+    must_change_password as auth_must_change_password,
     verify_login,
 )
 from app.services import download_manager as dm
@@ -129,7 +130,7 @@ def login(body: LoginIn, request: Request, db: Session = Depends(get_db)) -> dic
     if not verify_login(db, body.username, body.password):
         raise HTTPException(status_code=401, detail="Benutzername oder Passwort falsch.")
     request.session["username"] = body.username
-    return {"username": body.username}
+    return {"username": body.username, "must_change_password": auth_must_change_password(db, body.username)}
 
 
 @app.post("/api/auth/logout")
@@ -139,8 +140,8 @@ def logout(request: Request) -> dict:
 
 
 @app.get("/api/auth/me")
-def me(username: str = Depends(require_login)) -> dict:
-    return {"username": username}
+def me(username: str = Depends(require_login), db: Session = Depends(get_db)) -> dict:
+    return {"username": username, "must_change_password": auth_must_change_password(db, username)}
 
 
 class ChangePasswordIn(BaseModel):

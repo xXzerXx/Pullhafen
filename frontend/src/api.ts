@@ -32,12 +32,12 @@ export { ApiError }
 
 export const auth = {
   login: (username: string, password: string) =>
-    request<{ username: string }>('/api/auth/login', {
+    request<{ username: string; must_change_password: boolean }>('/api/auth/login', {
       method: 'POST',
       body: JSON.stringify({ username, password }),
     }),
   logout: () => request<{ status: string }>('/api/auth/logout', { method: 'POST' }),
-  me: () => request<{ username: string }>('/api/auth/me'),
+  me: () => request<{ username: string; must_change_password: boolean }>('/api/auth/me'),
   changePassword: (currentPassword: string, newPassword: string) =>
     request<{ status: string }>('/api/auth/change-password', {
       method: 'POST',

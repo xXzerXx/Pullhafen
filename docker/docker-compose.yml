@@ -18,14 +18,20 @@ services:
     environment:
       # Nur beim allerersten Start wirksam (siehe app/services/auth.py) -
       # ein späterer Neustart mit anderen Werten überschreibt ein bereits
-      # gesetztes Passwort NICHT.
+      # gesetztes Passwort NICHT. admin/admin ist hier bewusst der Standard:
+      # die Oberfläche erzwingt direkt nach dem ersten Login ein eigenes
+      # Passwort, bevor irgendetwas anderes benutzbar ist (siehe
+      # must_change_password in app/services/auth.py).
       PULLHAFEN_ADMIN_USERNAME: admin
-      PULLHAFEN_ADMIN_PASSWORD: change-me-on-first-login
+      PULLHAFEN_ADMIN_PASSWORD: admin
     volumes:
-      - pullhafen_data:/data
-      - pullhafen_downloads:/downloads
+      # Ein einziger Mount reicht - Pullhafen legt data/ und downloads/
+      # darin selbst an (siehe PULLHAFEN_DATA_DIR/PULLHAFEN_DOWNLOADS_DIR
+      # im Dockerfile). Wer Downloads auf einem eigenen, separaten Dataset
+      # haben will, mountet stattdessen zusätzlich einen zweiten Pfad auf
+      # /appdata/downloads statt auf den gemeinsamen Elternordner.
+      - pullhafen_appdata:/appdata
     restart: unless-stopped
 
 volumes:
-  pullhafen_data:
-  pullhafen_downloads:
+  pullhafen_appdata:
