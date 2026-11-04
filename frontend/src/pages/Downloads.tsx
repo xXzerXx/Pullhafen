@@ -1,20 +1,24 @@
 import { useState } from 'react'
 import { downloads, items as itemsApi } from '../api'
 import { useItems } from '../ItemsContext'
+import { useSelection } from '../useSelection'
 import { Thumbnail } from '../components/Thumbnail'
+import { BulkBar } from '../components/BulkBar'
 import { PlayIcon, PauseIcon, CloseIcon } from '../components/icons'
 import { formatBytes, formatEta, formatSpeed } from '../format'
 import { useDownloadSpeeds } from '../useDownloadSpeeds'
 
 export function Downloads() {
-  const { items, reload, removeItem } = useItems()
+  const { items, reload, removeItem, removeItems } = useItems()
   const [busyIds, setBusyIds] = useState<Set<number>>(new Set())
   const [cleaning, setCleaning] = useState(false)
+  const [bulkBusy, setBulkBusy] = useState(false)
 
   const active = items.filter(
     (i) => (i.status === 'downloading' || i.status === 'paused' || i.status === 'failed') && !i.hidden_from_downloads,
   )
   const speeds = useDownloadSpeeds(active)
+  const { selected, toggle, toggleAll, allSelected, clear } = useSelection(active.map((i) => i.id))
 
   function setBusy(id: number, busy: boolean) {
     setBusyIds((prev) => {
@@ -44,6 +48,24 @@ export function Downloads() {
     }
   }
 
+  async function handleBulkDelete() {
+    const ids = Array.from(selected)
+    const confirmed = window.confirm(
+      `${ids.length} Einträge wirklich entfernen? Laufende Downloads müssen dafür erst pausiert sein, bereits geladene Teildateien werden mit gelöscht.`,
+    )
+    if (!confirmed) return
+    setBulkBusy(true)
+    try {
+      const failed = await removeItems(ids)
+      if (failed.length > 0) {
+        window.alert(`${failed.length} Eintrag/Einträge konnten nicht entfernt werden (vermutlich noch aktiv - erst pausieren).`)
+      }
+      clear()
+    } finally {
+      setBulkBusy(false)
+    }
+  }
+
   const hasFailed = active.some((i) => i.status === 'failed')
 
   return (
@@ -61,7 +83,13 @@ export function Downloads() {
       {active.length === 0 ? (
         <p className="empty-hint">Keine aktiven Downloads.</p>
       ) : (
-        <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <>
+          <label className="select-all-row">
+            <input type="checkbox" checked={allSelected} onChange={toggleAll} />
+            Alle angezeigten markieren
+          </label>
+          <BulkBar count={selected.size} busy={bulkBusy} onDelete={handleBulkDelete} onClear={clear} />
+          <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
           {active.map((item) => {
             const running = item.status === 'downloading'
             const pct =
@@ -76,6 +104,13 @@ export function Downloads() {
             return (
               <li key={item.id} className="download-card">
                 <div className="download-card__top">
+                  <input
+                    type="checkbox"
+                    className="download-card__checkbox"
+                    checked={selected.has(item.id)}
+                    onChange={() => toggle(item.id)}
+                    aria-label={`"${item.title ?? item.filename ?? item.url}" auswählen`}
+                  />
                   <Thumbnail item={item} className="download-card__thumb" />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -146,7 +181,8 @@ export function Downloads() {
               </li>
             )
           })}
-        </ul>
+          </ul>
+        </>
       )}
     </div>
   )

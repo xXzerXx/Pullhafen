@@ -1,18 +1,22 @@
 import { useState } from 'react'
 import { items as itemsApi } from '../api'
 import { useItems } from '../ItemsContext'
+import { useSelection } from '../useSelection'
 import { Thumbnail } from '../components/Thumbnail'
+import { BulkBar } from '../components/BulkBar'
 import { CloseIcon } from '../components/icons'
 import { formatDuration } from '../format'
 
 export function Queue() {
-  const { items, removeItem } = useItems()
+  const { items, removeItem, removeItems } = useItems()
   const [busyIds, setBusyIds] = useState<Set<number>>(new Set())
+  const [bulkBusy, setBulkBusy] = useState(false)
 
   // Warteschlange = wirklich wartend, noch nicht gestartet (siehe Vorschau) -
   // sobald ein Download läuft oder pausiert ist, gehört er in den
   // Downloads-Reiter.
   const queued = items.filter((i) => i.status === 'queued')
+  const { selected, toggle, toggleAll, allSelected, clear } = useSelection(queued.map((i) => i.id))
 
   function setBusy(id: number, busy: boolean) {
     setBusyIds((prev) => {
@@ -41,6 +45,24 @@ export function Queue() {
     }
   }
 
+  async function handleBulkDelete() {
+    const ids = Array.from(selected)
+    const confirmed = window.confirm(
+      `${ids.length} Einträge wirklich aus der Warteschlange entfernen? Das lässt sich nicht rückgängig machen.`,
+    )
+    if (!confirmed) return
+    setBulkBusy(true)
+    try {
+      const failed = await removeItems(ids)
+      if (failed.length > 0) {
+        window.alert(`${failed.length} Eintrag/Einträge konnten nicht entfernt werden.`)
+      }
+      clear()
+    } finally {
+      setBulkBusy(false)
+    }
+  }
+
   return (
     <div className="page">
       <div className="section-head">
@@ -53,9 +75,22 @@ export function Queue() {
       {queued.length === 0 ? (
         <p className="empty-hint">Nichts in der Warteschlange.</p>
       ) : (
-        <ul className="item-list" style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <>
+          <label className="select-all-row">
+            <input type="checkbox" checked={allSelected} onChange={toggleAll} />
+            Alle angezeigten markieren
+          </label>
+          <BulkBar count={selected.size} busy={bulkBusy} onDelete={handleBulkDelete} onClear={clear} />
+          <ul className="item-list" style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
           {queued.map((item) => (
             <li key={item.id} className="queue-row">
+              <input
+                type="checkbox"
+                className="queue-row__checkbox"
+                checked={selected.has(item.id)}
+                onChange={() => toggle(item.id)}
+                aria-label={`"${item.title ?? item.filename ?? item.url}" auswählen`}
+              />
               <Thumbnail item={item} className="queue-row__thumb" />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="queue-row__title" title={item.url}>
@@ -80,7 +115,8 @@ export function Queue() {
               </button>
             </li>
           ))}
-        </ul>
+          </ul>
+        </>
       )}
     </div>
   )

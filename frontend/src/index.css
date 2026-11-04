@@ -502,6 +502,69 @@ main {
   color: var(--text);
 }
 
+/* --- Mehrfachauswahl (Warteschlange/Downloads/Bibliothek) --- */
+
+.select-all-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-muted);
+  cursor: pointer;
+  margin-bottom: 10px;
+  width: fit-content;
+}
+.queue-row__checkbox,
+.download-card__checkbox {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+.library-card__checkbox {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 17px;
+  height: 17px;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+.bulk-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--surface-raised, var(--surface));
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-bottom: 10px;
+  font-size: 13px;
+}
+.bulk-bar__count {
+  color: var(--text-muted);
+  margin-right: auto;
+}
+.bulk-bar__delete {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--danger);
+  border: 1px solid var(--danger);
+  background: none;
+  border-radius: 6px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+.bulk-bar__clear {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 6px 4px;
+}
+
 /* --- Download cards --- */
 
 .download-card {

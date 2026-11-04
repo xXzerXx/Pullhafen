@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react'
 import { auth, items as itemsApi } from '../api'
 import { useItems } from '../ItemsContext'
+import { useSelection } from '../useSelection'
 import type { Item } from '../types'
 import { Thumbnail } from '../components/Thumbnail'
+import { BulkBar } from '../components/BulkBar'
 import { VideoPlayer } from '../components/VideoPlayer'
 import {
   PlayIcon,
@@ -31,9 +33,11 @@ interface LibraryCardProps {
   onPlay: (item: Item) => void
   knownTags: string[]
   knownPerformers: string[]
+  selected: boolean
+  onToggleSelect: () => void
 }
 
-function LibraryCard({ item, onPlay, knownTags, knownPerformers }: LibraryCardProps) {
+function LibraryCard({ item, onPlay, knownTags, knownPerformers, selected, onToggleSelect }: LibraryCardProps) {
   const { reload, removeItem } = useItems()
   const [saving, setSaving] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -104,6 +108,14 @@ function LibraryCard({ item, onPlay, knownTags, knownPerformers }: LibraryCardPr
   return (
     <div className="library-card">
       <Thumbnail item={item} className="library-card__thumb" onClick={() => onPlay(item)}>
+        <input
+          type="checkbox"
+          className="library-card__checkbox"
+          checked={selected}
+          onChange={onToggleSelect}
+          onClick={(e) => e.stopPropagation()}
+          aria-label={`"${item.title ?? item.filename ?? item.url}" auswählen`}
+        />
         <span className="library-card__duration-badge">{formatDuration(item.duration_seconds)}</span>
       </Thumbnail>
       <div className="library-card__body">
@@ -234,7 +246,8 @@ function LibraryCard({ item, onPlay, knownTags, knownPerformers }: LibraryCardPr
 }
 
 export function Library({ search, onSearchChange }: { search: string; onSearchChange: (v: string) => void }) {
-  const { items } = useItems()
+  const { items, removeItems } = useItems()
+  const [bulkBusy, setBulkBusy] = useState(false)
   const [tagFilter, setTagFilter] = useState('')
   const [performerFilter, setPerformerFilter] = useState('')
   const [sourceFilter, setSourceFilter] = useState('')
@@ -319,6 +332,26 @@ export function Library({ search, onSearchChange }: { search: string; onSearchCh
       const cmp = new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
       return sortOrder === 'newest' ? -cmp : cmp
     })
+
+  const { selected, toggle, toggleAll, allSelected, clear } = useSelection(filtered.map((i) => i.id))
+
+  async function handleBulkDelete() {
+    const ids = Array.from(selected)
+    const confirmed = window.confirm(
+      `${ids.length} Videos wirklich endgültig löschen? Die Dateien auf der Platte werden dabei mit entfernt - das lässt sich nicht rückgängig machen.`,
+    )
+    if (!confirmed) return
+    setBulkBusy(true)
+    try {
+      const failed = await removeItems(ids)
+      if (failed.length > 0) {
+        window.alert(`${failed.length} Video(s) konnten nicht gelöscht werden.`)
+      }
+      clear()
+    } finally {
+      setBulkBusy(false)
+    }
+  }
 
   return (
     <div className="page">
@@ -421,17 +454,26 @@ export function Library({ search, onSearchChange }: { search: string; onSearchCh
       {filtered.length === 0 ? (
         <p className="empty-hint">Nichts gefunden.</p>
       ) : (
-        <div className="library-grid">
-          {filtered.map((item) => (
-            <LibraryCard
-              key={item.id}
-              item={item}
-              onPlay={setPlaying}
-              knownTags={allTags}
-              knownPerformers={allPerformers}
-            />
-          ))}
-        </div>
+        <>
+          <label className="select-all-row">
+            <input type="checkbox" checked={allSelected} onChange={toggleAll} />
+            Alle angezeigten markieren
+          </label>
+          <BulkBar count={selected.size} busy={bulkBusy} onDelete={handleBulkDelete} onClear={clear} />
+          <div className="library-grid">
+            {filtered.map((item) => (
+              <LibraryCard
+                key={item.id}
+                item={item}
+                onPlay={setPlaying}
+                knownTags={allTags}
+                knownPerformers={allPerformers}
+                selected={selected.has(item.id)}
+                onToggleSelect={() => toggle(item.id)}
+              />
+            ))}
+          </div>
+        </>
       )}
 
       {playing && <VideoPlayer item={playing} onClose={() => setPlaying(null)} />}

@@ -9,6 +9,7 @@ interface ItemsContextValue {
   reload: () => Promise<void>
   addLink: (url: string) => Promise<Item>
   removeItem: (id: number) => Promise<void>
+  removeItems: (ids: number[]) => Promise<number[]>
 }
 
 export interface TabCounts {
@@ -67,6 +68,25 @@ export function ItemsProvider({ children }: { children: (counts: TabCounts) => R
     setItems((prev) => prev.filter((i) => i.id !== id))
   }, [])
 
+  // Sammel-Löschen ruft bewusst denselben Einzel-Endpunkt wiederholt auf
+  // statt einen eigenen Bulk-Endpunkt zu bauen - die echte Lösch-Logik
+  // (Datei löschen, Thumbnail löschen, "läuft gerade"-Schutz) bleibt so an
+  // einer einzigen Stelle. Gibt die IDs zurück, die NICHT gelöscht werden
+  // konnten (z.B. weil der Download gerade läuft), statt den Fehler zu
+  // verschlucken.
+  const removeItems = useCallback(async (ids: number[]) => {
+    const failed: number[] = []
+    for (const id of ids) {
+      try {
+        await itemsApi.remove(id)
+        setItems((prev) => prev.filter((i) => i.id !== id))
+      } catch {
+        failed.push(id)
+      }
+    }
+    return failed
+  }, [])
+
   // Reiter-Aufteilung nach der von Thomas bestätigten Vorschau: Warteschlange
   // = wirklich wartend (noch nicht gestartet), Downloads = aktive
   // Übertragungen inkl. Fehler, Bibliothek = nur Fertiges. hidden_from_downloads
@@ -81,7 +101,7 @@ export function ItemsProvider({ children }: { children: (counts: TabCounts) => R
   }
 
   return (
-    <ItemsContext.Provider value={{ items, loading, reload, addLink, removeItem }}>
+    <ItemsContext.Provider value={{ items, loading, reload, addLink, removeItem, removeItems }}>
       {children(counts)}
     </ItemsContext.Provider>
   )
