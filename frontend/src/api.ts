@@ -150,6 +150,14 @@ export const settings = {
       method: 'PUT',
       body: JSON.stringify({ threshold }),
     }),
+  getToolVersions: () => request<ToolVersionInfo[]>('/api/settings/tool-versions'),
+}
+
+export interface ToolVersionInfo {
+  name: string
+  installed: string
+  latest: string | null
+  update_available: boolean
 }
 
 export interface ApiTokenInfo {

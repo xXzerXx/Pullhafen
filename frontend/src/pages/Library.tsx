@@ -300,9 +300,29 @@ export function Library({ search, onSearchChange }: { search: string; onSearchCh
   const completed = items.filter((i) => i.status === 'completed')
   const restrictedCount = completed.filter((i) => i.restricted).length
 
-  const allTags = useMemo(() => Array.from(new Set(completed.flatMap((i) => i.tags))).sort(), [completed])
-  const allPerformers = useMemo(
-    () => Array.from(new Set(completed.flatMap((i) => i.performers))).sort(),
+  // Tags bewusst GETRENNT nach Einschränkung berechnet, nicht als eine
+  // gemeinsame Liste (Thomas' Wunsch) - sonst würde ein Tag, das nur an
+  // eingeschränkten Videos hängt, über Filter-Dropdown/Autocomplete
+  // sichtbar bleiben, selbst während "Eingeschränkte Inhalte ausblenden"
+  // aktiv ist. Derselbe Tagname darf dadurch in beiden Listen auftauchen -
+  // das ist hier ausdrücklich erwünscht, es sind zwei getrennte Textlisten,
+  // keine gemeinsame Identität.
+  const freeTags = useMemo(
+    () => Array.from(new Set(completed.filter((i) => !i.restricted).flatMap((i) => i.tags))).sort(),
+    [completed],
+  )
+  const restrictedTags = useMemo(
+    () => Array.from(new Set(completed.filter((i) => i.restricted).flatMap((i) => i.tags))).sort(),
+    [completed],
+  )
+  // Gleiche Trennung wie bei Tags, auf Thomas' Wunsch auch für
+  // Darsteller:innen (siehe freeTags/restrictedTags oben).
+  const freePerformers = useMemo(
+    () => Array.from(new Set(completed.filter((i) => !i.restricted).flatMap((i) => i.performers))).sort(),
+    [completed],
+  )
+  const restrictedPerformers = useMemo(
+    () => Array.from(new Set(completed.filter((i) => i.restricted).flatMap((i) => i.performers))).sort(),
     [completed],
   )
   const allSources = useMemo(
@@ -423,22 +443,48 @@ export function Library({ search, onSearchChange }: { search: string; onSearchCh
           Tags
           <select value={tagFilter} onChange={(e) => setTagFilter(e.target.value)}>
             <option value="">alle</option>
-            {allTags.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
+            {freeTags.length > 0 && (
+              <optgroup label="Frei">
+                {freeTags.map((t) => (
+                  <option key={`free-${t}`} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </optgroup>
+            )}
+            {!hideRestricted && restrictedTags.length > 0 && (
+              <optgroup label="Eingeschränkt">
+                {restrictedTags.map((t) => (
+                  <option key={`restricted-${t}`} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </optgroup>
+            )}
           </select>
         </span>
         <span className="filter-chip">
           Darsteller:innen
           <select value={performerFilter} onChange={(e) => setPerformerFilter(e.target.value)}>
             <option value="">alle</option>
-            {allPerformers.map((p) => (
-              <option key={p} value={p}>
-                {p}
-              </option>
-            ))}
+            {freePerformers.length > 0 && (
+              <optgroup label="Frei">
+                {freePerformers.map((p) => (
+                  <option key={`free-${p}`} value={p}>
+                    {p}
+                  </option>
+                ))}
+              </optgroup>
+            )}
+            {!hideRestricted && restrictedPerformers.length > 0 && (
+              <optgroup label="Eingeschränkt">
+                {restrictedPerformers.map((p) => (
+                  <option key={`restricted-${p}`} value={p}>
+                    {p}
+                  </option>
+                ))}
+              </optgroup>
+            )}
           </select>
         </span>
         <span className="filter-chip">
@@ -466,8 +512,8 @@ export function Library({ search, onSearchChange }: { search: string; onSearchCh
                 key={item.id}
                 item={item}
                 onPlay={setPlaying}
-                knownTags={allTags}
-                knownPerformers={allPerformers}
+                knownTags={item.restricted ? restrictedTags : freeTags}
+                knownPerformers={item.restricted ? restrictedPerformers : freePerformers}
                 selected={selected.has(item.id)}
                 onToggleSelect={() => toggle(item.id)}
               />

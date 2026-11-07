@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ApiError, apiTokens, auth, type ApiTokenInfo, settings as settingsApi } from '../api'
+import { ApiError, apiTokens, auth, type ApiTokenInfo, type ToolVersionInfo, settings as settingsApi } from '../api'
 import type { AppSettings } from '../types'
 import { ToggleSwitch } from '../components/ToggleSwitch'
 import { GinkgoLeafIcon } from '../components/icons'
@@ -73,6 +73,7 @@ export function Settings() {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [showSafariPrompt, setShowSafariPrompt] = useState(false)
+  const [toolVersions, setToolVersions] = useState<ToolVersionInfo[]>([])
 
   const [users, setUsers] = useState<{ username: string }[]>([])
   const [newAccountUsername, setNewAccountUsername] = useState('')
@@ -102,6 +103,18 @@ export function Settings() {
 
   useEffect(() => {
     loadAll().finally(() => setLoading(false))
+  }, [])
+
+  useEffect(() => {
+    // Eigener Aufruf statt in loadAll() - das geht raus zu PyPI, soll die
+    // Einstellungsseite selbst aber nicht verzögern oder blockieren, wenn
+    // kein Internet da ist oder PyPI mal nicht antwortet (settingsApi.
+    // getToolVersions() schluckt das serverseitig schon, siehe app/services/
+    // updates.py - hier bleibt toolVersions dann einfach leer).
+    settingsApi
+      .getToolVersions()
+      .then(setToolVersions)
+      .catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -553,6 +566,24 @@ export function Settings() {
           Konto anlegen
         </button>
       </section>
+
+      {toolVersions.length > 0 && (
+        <section>
+          <h2>Werkzeuge</h2>
+          <ul className="domain-list">
+            {toolVersions.map((t) => (
+              <li key={t.name}>
+                {t.name} {t.installed}
+                {t.update_available && t.latest && (
+                  <span className="hint" style={{ marginLeft: 8 }}>
+                    Update verfügbar: {t.latest}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <footer className="app-footer" title="Für Kyo">
         <GinkgoLeafIcon size={20} className="app-footer__leaf" />

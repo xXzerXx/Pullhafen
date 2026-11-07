@@ -3,6 +3,7 @@ from typing import Callable
 
 import yt_dlp
 from yt_dlp.extractor import gen_extractor_classes
+from yt_dlp.networking.impersonate import ImpersonateTarget
 
 ProgressHook = Callable[[dict], None]
 
@@ -44,6 +45,14 @@ def _base_opts() -> dict:
         # 503 gestoppt hat. Pullhafen ist als "eine URL = ein Item" gebaut,
         # darum hier hart auf das einzelne verlinkte Video beschränkt.
         "noplaylist": True,
+        # Nicht nur ein gefälschter User-Agent-Header (siehe DEFAULT_HEADERS
+        # im http_engine), sondern über curl_cffi (siehe requirements.txt)
+        # ein echtes TLS/JA3-Fingerprint-Impersonat von Chrome - der Teil,
+        # den Cloudflare & Co. auf Verbindungsebene prüfen, bevor überhaupt
+        # ein HTTP-Header gelesen wird. Ohne curl_cffi installiert würde
+        # YoutubeDL() schon beim Erzeugen fehlschlagen, darum ist das Paket
+        # eine feste Abhängigkeit, kein optionales Extra.
+        "impersonate": ImpersonateTarget.from_str("chrome"),
     }
 
 

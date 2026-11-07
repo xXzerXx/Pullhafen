@@ -35,6 +35,7 @@ from app.services.auth import (
 )
 from app.services import download_manager as dm
 from app.services.engines import ytdlp_engine
+from app.services import updates as updates_service
 from app.services.ws_manager import manager as ws_manager
 from app.services.settings import (
     DOWNLOADS_SUBPATH_KEY,
@@ -1034,6 +1035,22 @@ def patch_app_settings(
     if body.auto_remove_completed is not None:
         set_auto_remove_completed(db, body.auto_remove_completed)
     return _app_settings_out(db)
+
+
+class ToolVersionOut(BaseModel):
+    name: str
+    installed: str
+    latest: str | None
+    update_available: bool
+
+
+@app.get("/api/settings/tool-versions", response_model=list[ToolVersionOut])
+async def get_tool_versions(_: str = Depends(require_login)) -> list[ToolVersionOut]:
+    versions = await updates_service.check_tool_versions()
+    return [
+        ToolVersionOut(name=v.name, installed=v.installed, latest=v.latest, update_available=v.update_available)
+        for v in versions
+    ]
 
 
 class ApiTokenOut(BaseModel):
